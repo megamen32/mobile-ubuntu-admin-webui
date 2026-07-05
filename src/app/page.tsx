@@ -10,6 +10,7 @@ import { ServicesList } from "@/components/admin/services/services-list";
 import { ServiceDetail } from "@/components/admin/services/service-detail";
 import { LogsViewer } from "@/components/admin/logs/logs-viewer";
 import { TerminalView } from "@/components/admin/terminal/terminal-view";
+import { TerminalWrapper } from "@/components/admin/terminal/terminal-wrapper";
 import { FileManager } from "@/components/admin/files/file-manager";
 import { FileEditor } from "@/components/admin/files/file-editor";
 
@@ -81,7 +82,7 @@ function renderRoute(route: { path: string; segments: string[]; query: URLSearch
 
   // /terminal
   if (segments[0] === "terminal") {
-    return <TerminalView />;
+    return <TerminalWrapper />;
   }
 
   // /files/edit?path=...

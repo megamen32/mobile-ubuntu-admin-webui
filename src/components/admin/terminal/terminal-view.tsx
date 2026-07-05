@@ -36,7 +36,11 @@ const STORAGE_HIST = "ub-admin:terminal-history";
 const STORAGE_CWD = "ub-admin:terminal-cwd";
 const MAX_HISTORY = 500;
 
-export function TerminalView() {
+interface TerminalViewProps {
+  onSwitchToPty?: () => void;
+}
+
+export function TerminalView({ onSwitchToPty }: TerminalViewProps = {}) {
   const [, navigate] = useHashRoute();
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [input, setInput] = useState("");
@@ -328,9 +332,21 @@ export function TerminalView() {
       <div className="px-3 py-2 flex items-center justify-between border-b border-border">
         <div className="flex items-center gap-2">
           <TerminalSquare className="w-4 h-4 text-primary" />
-          <h1 className="text-sm font-semibold">Terminal</h1>
+          <h1 className="text-sm font-semibold">Terminal · Simple</h1>
         </div>
         <div className="flex gap-1">
+          {onSwitchToPty && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={onSwitchToPty}
+              title="Switch to PTY mode (full TUI support)"
+            >
+              <TerminalSquare className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline ml-1">PTY</span>
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={clearTerminal} title="Clear screen (Ctrl+L)">
             <Trash2 className="w-4 h-4" />
           </Button>

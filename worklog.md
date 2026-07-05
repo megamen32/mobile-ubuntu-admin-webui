@@ -75,3 +75,37 @@ Build mobile-first admin web panel for Ubuntu servers with:
 - ✅ `/api/services` returns mock units
 - ✅ `/api/services/<name>` returns unit detail
 - ✅ `/api/services/<name>/logs` returns mock journalctl
+
+---
+
+## Task ID: PTY-1
+Agent: main
+Task: Add WebSocket-terminal with PTY for full TUI applications (htop, vim, nano, mc)
+
+Work Log:
+- Created mini-service at /mini-services/pty-service (port 3003) with socket.io + node-pty
+- Installed @xterm/xterm, addon-fit, addon-web-links, addon-search on frontend
+- Created src/components/admin/terminal/pty-terminal.tsx with xterm.js renderer
+- Created src/components/admin/terminal/terminal-wrapper.tsx for mode switching (PTY ↔ Simple)
+- Updated terminal-view.tsx to accept onSwitchToPty prop (added PTY button in header)
+- Updated page.tsx to render TerminalWrapper at #/terminal
+- Discovered Next.js rewrites can't reliably proxy WebSocket to a different port in sandbox
+- Pivoted: moved PTY server inside Next.js process using HTTP long-polling on port 3000
+- Created src/lib/pty-sessions/index.ts (in-process PTY pool with rolling buffer + long-poll waiters)
+- Created 5 API routes: /api/pty/connect, /api/pty/input, /api/pty/output, /api/pty/resize, /api/pty/kill
+- Refactored pty-terminal.tsx to use HTTP long-polling instead of socket.io
+- Fixed React Strict Mode double-mount race by combining xterm load + PTY connect into single effect
+- Added idle session reaper (30 min timeout)
+- All PTY state lives inside Next.js process — no separate mini-service needed in production
+
+Stage Summary:
+- PTY terminal fully working via HTTP long-polling on port 3000
+- Real bash session with xterm.js rendering — verified `ls /` returns filesystem listing
+- Special keys bar: Tab, ↑↓←→, Home/End, PgUp/PgDn, Ins/Del/Esc, ^C/^D/^L/^Z/^R/^A/^E/^W/^U/^K
+- Auto-resize via ResizeObserver → POST /api/pty/resize
+- Session persistence via sessionStorage (survives tab reload)
+- Mode switcher: PTY (full TUI) ↔ Simple (text-based, mobile-friendly)
+- Idle reaper kills abandoned sessions after 30 min
+- All API routes require Basic auth
+- Lint passes cleanly
+- Screenshots: /home/z/my-project/download/07-pty-terminal.png
