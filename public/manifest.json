@@ -1,0 +1,18 @@
+{
+  "name": "Ubuntu Admin",
+  "short_name": "UB-Admin",
+  "description": "Mobile-first admin panel for Ubuntu servers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2C001E",
+  "theme_color": "#E95420",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
