@@ -1,0 +1,23 @@
+# GitHub Repository Topics
+# These help users discover the repo. Add or remove as appropriate.
+
+ubuntu
+admin-panel
+systemd
+terminal
+pty
+nextjs
+typescript
+tailwindcss
+shadcn-ui
+xterm
+codemirror
+mobile-first
+pwa
+self-hosted
+server-management
+journalctl
+file-manager
+linux
+devops
+homelab

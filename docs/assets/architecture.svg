@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 700" width="1100" height="700">
+  <defs>
+    <linearGradient id="browserBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2C001E"/>
+      <stop offset="100%" stop-color="#3D0E2C"/>
+    </linearGradient>
+    <linearGradient id="serverBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3D0E2C"/>
+      <stop offset="100%" stop-color="#2C001E"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E95420"/>
+      <stop offset="100%" stop-color="#FF7B3A"/>
+    </linearGradient>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#E95420"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="700" fill="#0F0A0F"/>
+
+  <!-- Browser section -->
+  <g>
+    <rect x="40" y="40" width="480" height="620" rx="16" fill="url(#browserBg)" stroke="#E95420" stroke-opacity="0.3" stroke-width="2"/>
+    <text x="280" y="80" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="20" font-weight="700" fill="white">Browser</text>
+    <text x="280" y="105" text-anchor="middle" font-family="monospace" font-size="12" fill="#9B8E9B">Mobile / Desktop</text>
+
+    <!-- UI Components -->
+    <g transform="translate(70, 140)">
+      <rect x="0" y="0" width="180" height="80" rx="8" fill="white" fill-opacity="0.08" stroke="white" stroke-opacity="0.15"/>
+      <text x="90" y="30" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="white">Overview</text>
+      <text x="90" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">system info</text>
+      <text x="90" y="64" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">services summary</text>
+    </g>
+    <g transform="translate(290, 140)">
+      <rect x="0" y="0" width="180" height="80" rx="8" fill="white" fill-opacity="0.08" stroke="white" stroke-opacity="0.15"/>
+      <text x="90" y="30" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="white">Services</text>
+      <text x="90" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">list + filter</text>
+      <text x="90" y="64" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">#/service/&lt;name&gt;</text>
+    </g>
+    <g transform="translate(70, 240)">
+      <rect x="0" y="0" width="180" height="80" rx="8" fill="white" fill-opacity="0.08" stroke="white" stroke-opacity="0.15"/>
+      <text x="90" y="30" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="white">Logs</text>
+      <text x="90" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">journalctl viewer</text>
+      <text x="90" y="64" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">auto-refresh</text>
+    </g>
+    <g transform="translate(290, 240)">
+      <rect x="0" y="0" width="180" height="80" rx="8" fill="url(#accent)" fill-opacity="0.2" stroke="url(#accent)" stroke-width="2"/>
+      <text x="90" y="30" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="white">Terminal</text>
+      <text x="90" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="#E95420">xterm.js + PTY</text>
+      <text x="90" y="64" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">real bash</text>
+    </g>
+    <g transform="translate(70, 340)">
+      <rect x="0" y="0" width="180" height="80" rx="8" fill="white" fill-opacity="0.08" stroke="white" stroke-opacity="0.15"/>
+      <text x="90" y="30" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="white">Files</text>
+      <text x="90" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">browse + upload</text>
+      <text x="90" y="64" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">address bar</text>
+    </g>
+    <g transform="translate(290, 340)">
+      <rect x="0" y="0" width="180" height="80" rx="8" fill="white" fill-opacity="0.08" stroke="white" stroke-opacity="0.15"/>
+      <text x="90" y="30" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="white">File Editor</text>
+      <text x="90" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">CodeMirror 6</text>
+      <text x="90" y="64" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">auto-format</text>
+    </g>
+
+    <!-- Cache layer -->
+    <g transform="translate(70, 460)">
+      <rect x="0" y="0" width="400" height="80" rx="8" fill="black" fill-opacity="0.4" stroke="#3B73D4" stroke-opacity="0.5" stroke-dasharray="4 4"/>
+      <text x="200" y="30" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#3B73D4">SWR Cache + Auth</text>
+      <text x="200" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">localStorage · 30-day rolling session</text>
+      <text x="200" y="64" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">Authorization: Basic header</text>
+    </g>
+
+    <!-- Hash router -->
+    <g transform="translate(70, 560)">
+      <rect x="0" y="0" width="400" height="60" rx="8" fill="white" fill-opacity="0.05" stroke="white" stroke-opacity="0.15"/>
+      <text x="200" y="25" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="600" fill="white">Hash Router</text>
+      <text x="200" y="44" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">#/services · #/service/nginx.service · #/files/edit?path=...</text>
+    </g>
+  </g>
+
+  <!-- Arrow connecting browser to server -->
+  <line x1="525" y1="350" x2="575" y2="350" stroke="#E95420" stroke-width="3" marker-end="url(#arrowhead)"/>
+  <text x="550" y="340" text-anchor="middle" font-family="monospace" font-size="10" fill="#E95420">HTTPS</text>
+  <text x="550" y="370" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">Basic auth</text>
+
+  <!-- Server section -->
+  <g>
+    <rect x="580" y="40" width="480" height="620" rx="16" fill="url(#serverBg)" stroke="#E95420" stroke-opacity="0.3" stroke-width="2"/>
+    <text x="820" y="80" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="20" font-weight="700" fill="white">Next.js 16 Server</text>
+    <text x="820" y="105" text-anchor="middle" font-family="monospace" font-size="12" fill="#9B8E9B">Port 3000 · App Router</text>
+
+    <!-- API Routes -->
+    <g transform="translate(610, 140)">
+      <text x="0" y="0" font-family="sans-serif" font-size="14" font-weight="700" fill="#E95420">API Routes</text>
+
+      <g transform="translate(0, 20)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#27C93F">POST</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/auth/login</text>
+      </g>
+      <g transform="translate(0, 52)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#3B73D4">GET</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/services</text>
+      </g>
+      <g transform="translate(0, 84)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#F99B11">POST</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/services/[name]</text>
+      </g>
+      <g transform="translate(0, 116)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#3B73D4">GET</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/logs</text>
+      </g>
+      <g transform="translate(0, 148)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#F99B11">POST</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/terminal/exec</text>
+      </g>
+      <g transform="translate(220, 20)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#F99B11">POST</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/pty/connect</text>
+      </g>
+      <g transform="translate(220, 52)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#3B73D4">GET</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/pty/output</text>
+      </g>
+      <g transform="translate(220, 84)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#F99B11">POST</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/pty/input</text>
+      </g>
+      <g transform="translate(220, 116)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#F99B11">POST</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/files/upload</text>
+      </g>
+      <g transform="translate(220, 148)">
+        <rect x="0" y="0" width="200" height="28" rx="4" fill="black" fill-opacity="0.4"/>
+        <text x="10" y="18" font-family="monospace" font-size="11" fill="#F99B11">POST</text>
+        <text x="50" y="18" font-family="monospace" font-size="11" fill="white">/api/files/format</text>
+      </g>
+    </g>
+
+    <!-- Backends -->
+    <g transform="translate(610, 360)">
+      <text x="0" y="0" font-family="sans-serif" font-size="14" font-weight="700" fill="#E95420">System Backends</text>
+
+      <g transform="translate(0, 20)">
+        <rect x="0" y="0" width="140" height="60" rx="8" fill="black" fill-opacity="0.5" stroke="#27C93F" stroke-opacity="0.5"/>
+        <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="600" fill="#27C93F">systemctl</text>
+        <text x="70" y="44" text-anchor="middle" font-family="monospace" font-size="9" fill="#9B8E9B">start/stop/status</text>
+      </g>
+      <g transform="translate(160, 20)">
+        <rect x="0" y="0" width="140" height="60" rx="8" fill="black" fill-opacity="0.5" stroke="#3B73D4" stroke-opacity="0.5"/>
+        <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="600" fill="#3B73D4">journalctl</text>
+        <text x="70" y="44" text-anchor="middle" font-family="monospace" font-size="9" fill="#9B8E9B">log streaming</text>
+      </g>
+      <g transform="translate(320, 20)">
+        <rect x="0" y="0" width="140" height="60" rx="8" fill="black" fill-opacity="0.5" stroke="#E95420" stroke-opacity="0.7"/>
+        <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="600" fill="#E95420">node-pty</text>
+        <text x="70" y="44" text-anchor="middle" font-family="monospace" font-size="9" fill="#9B8E9B">bash PTY pool</text>
+      </g>
+      <g transform="translate(0, 100)">
+        <rect x="0" y="0" width="140" height="60" rx="8" fill="black" fill-opacity="0.5" stroke="#A555B9" stroke-opacity="0.5"/>
+        <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="600" fill="#A555B9">bash -c</text>
+        <text x="70" y="44" text-anchor="middle" font-family="monospace" font-size="9" fill="#9B8E9B">simple exec</text>
+      </g>
+      <g transform="translate(160, 100)">
+        <rect x="0" y="0" width="140" height="60" rx="8" fill="black" fill-opacity="0.5" stroke="#F99B11" stroke-opacity="0.5"/>
+        <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="600" fill="#F99B11">fs/promises</text>
+        <text x="70" y="44" text-anchor="middle" font-family="monospace" font-size="9" fill="#9B8E9B">file I/O</text>
+      </g>
+      <g transform="translate(320, 100)">
+        <rect x="0" y="0" width="140" height="60" rx="8" fill="black" fill-opacity="0.5" stroke="#27C93F" stroke-opacity="0.5"/>
+        <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="600" fill="#27C93F">prettier</text>
+        <text x="70" y="44" text-anchor="middle" font-family="monospace" font-size="9" fill="#9B8E9B">auto-format</text>
+      </g>
+    </g>
+
+    <!-- PTY pool -->
+    <g transform="translate(610, 560)">
+      <rect x="0" y="0" width="460" height="80" rx="8" fill="url(#accent)" fill-opacity="0.1" stroke="url(#accent)" stroke-width="2"/>
+      <text x="230" y="25" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#E95420">PTY Session Pool</text>
+      <text x="230" y="42" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">in-process · 64KB rolling buffer · 25s long-poll</text>
+      <text x="230" y="58" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">30-min idle reaper · auto-cleanup on exit</text>
+      <text x="230" y="74" text-anchor="middle" font-family="monospace" font-size="10" fill="#9B8E9B">sessionStorage persistence</text>
+    </g>
+  </g>
+</svg>
