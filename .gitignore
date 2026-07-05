@@ -60,3 +60,6 @@ server.log
 /download/
 /.agent-ctx/
 /.claude/
+# Tool result artifacts
+/tool-results/
+/.tool-results/
