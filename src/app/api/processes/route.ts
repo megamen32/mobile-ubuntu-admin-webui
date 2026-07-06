@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, unauthorized } from "@/lib/api-auth";
-import { runShell } from "@/lib/server-exec";
+import { getServerContext } from "@/lib/server-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,19 +10,20 @@ export const dynamic = "force-dynamic";
  *
  * Returns process list similar to `ps aux` but in JSON form.
  * Sortable by cpu%, mem%, pid, or name.
+ * Supports multi-server via X-Server-Id header.
  */
 
 export interface ProcessInfo {
   pid: number;
   user: string;
-  cpu: number;     // % CPU
-  mem: number;     // % MEM
-  vsz: number;     // virtual size in KB
-  rss: number;     // resident set size in KB
+  cpu: number;
+  mem: number;
+  vsz: number;
+  rss: number;
   tty: string;
-  stat: string;    // process state code
-  start: string;   // start time
-  time: string;    // CPU time
+  stat: string;
+  start: string;
+  time: string;
   command: string;
 }
 
@@ -30,13 +31,12 @@ export async function GET(req: NextRequest) {
   const auth = checkAuth(req);
   if (!auth.ok) return unauthorized();
 
+  const ctx = await getServerContext(req);
   const sp = req.nextUrl.searchParams;
   const sort = sp.get("sort") || "cpu";
   const limit = Math.min(500, Math.max(10, Number(sp.get("limit") || 50)));
 
-  // Use `ps aux` — universal across Linux distros
-  // Output columns: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
-  const r = await runShell("ps aux --no-headers --sort=-%cpu 2>&1", { timeout: 10_000 });
+  const r = await ctx.exec("ps aux --no-headers --sort=-%cpu 2>&1", { timeout: 10_000 });
   if (r.exitCode !== 0) {
     return NextResponse.json(
       { error: r.stderr || "ps failed", exitCode: r.exitCode },
@@ -47,8 +47,6 @@ export async function GET(req: NextRequest) {
   const processes: ProcessInfo[] = [];
   for (const line of r.stdout.split("\n")) {
     if (!line.trim()) continue;
-    // ps aux format: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
-    // COMMAND can contain spaces, so we split with limit 11
     const parts = line.trim().split(/\s+/);
     if (parts.length < 11) continue;
     const [user, pid, cpu, mem, vsz, rss, tty, stat, start, time, ...cmdParts] = parts;
@@ -68,7 +66,6 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Sort
   processes.sort((a, b) => {
     switch (sort) {
       case "mem": return b.mem - a.mem;
@@ -84,6 +81,7 @@ export async function GET(req: NextRequest) {
     processes: processes.slice(0, limit),
     total: processes.length,
     sort,
+    server: ctx.serverName,
     ts: Date.now(),
   });
 }

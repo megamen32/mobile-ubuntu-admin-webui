@@ -81,12 +81,19 @@ export function useLogStream({
     // EventSource needs auth — but it can't send custom headers.
     // Pass token via query string since we use Basic auth elsewhere.
     // For SSE we use a session token approach: include creds in URL.
+    // Also include serverId for multi-server support.
     let fullUrl = url;
     try {
       const auth = JSON.parse(localStorage.getItem("ub-admin:auth") || "{}");
       if (auth.username && auth.password) {
         const sep = url.includes("?") ? "&" : "?";
         fullUrl = `${url}${sep}u=${encodeURIComponent(auth.username)}&p=${encodeURIComponent(auth.password)}`;
+      }
+      // Multi-server: add server ID to query string
+      const serverId = localStorage.getItem("ub-admin:server-id");
+      if (serverId && serverId !== "local") {
+        const sep = fullUrl.includes("?") ? "&" : "?";
+        fullUrl = `${fullUrl}${sep}server=${encodeURIComponent(serverId)}`;
       }
     } catch { /* ignore */ }
 

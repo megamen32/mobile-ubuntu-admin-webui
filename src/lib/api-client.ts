@@ -84,6 +84,17 @@ export async function apiFetch<T>(
     headers.set("Content-Type", "application/json");
   }
 
+  // Multi-server: send X-Server-Id header if a remote server is selected
+  // Read from localStorage directly (avoids circular dep with React)
+  if (typeof window !== "undefined") {
+    try {
+      const serverId = localStorage.getItem("ub-admin:server-id");
+      if (serverId && serverId !== "local") {
+        headers.set("X-Server-Id", serverId);
+      }
+    } catch { /* ignore */ }
+  }
+
   // SWR pattern: return cached data immediately if present, refresh in bg
   if (cacheKey) {
     const cached = readCache<T>(cacheKey);

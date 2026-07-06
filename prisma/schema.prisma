@@ -103,3 +103,36 @@ model DeviceSession {
   @@unique([username, deviceId])
   @@index([username])
 }
+
+/**
+ * Remote server registry for multi-server mode.
+ *
+ * When a request has `X-Server-Id: <id>` header, the API routes connect via
+ * SSH to this server instead of running commands locally.
+ *
+ * Auth methods:
+ *  - "key": SSH public key auth. keyName is the filename in ~/.ssh/ (e.g. "id_rsa_prod").
+ *           The key file itself is NOT stored in the DB.
+ *  - "password": SSH password auth. Stored in DB (use with caution — prefer key auth).
+ *
+ * The "local" server (the host running this app) is not in this table —
+ * it's the implicit default when X-Server-Id is absent or "local".
+ */
+model Server {
+  id          String   @id @default(cuid())
+  name        String   @unique // display name + hostname label
+  host        String
+  port        Int      @default(22)
+  username    String
+  authMethod  String   @default("key") // "key" | "password"
+  password    String?  // for password auth (plaintext in DB — use key auth in prod)
+  keyName     String?  // for key auth — filename in ~/.ssh/
+  passphrase  String?  // optional passphrase for encrypted keys
+  label       String?  // optional group/label ("production", "staging")
+  lastSeen    DateTime?
+  lastOk      Boolean?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([label])
+}

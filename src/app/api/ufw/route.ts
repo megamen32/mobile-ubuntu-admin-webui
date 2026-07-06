@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, unauthorized } from "@/lib/api-auth";
-import { runShell, hasBin } from "@/lib/server-exec";
+import { hasBin } from "@/lib/server-exec";
+import { getServerContext } from "@/lib/server-context";
 import { recordAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/rate-limiter";
 
@@ -70,7 +71,9 @@ export async function GET(req: NextRequest) {
   const auth = checkAuth(req);
   if (!auth.ok) return unauthorized();
 
-  const hasUfw = await hasBin("ufw");
+  const ctx = await getServerContext(req);
+
+  const hasUfw = ctx.mode === "local" ? await hasBin("ufw") : true;
   if (!hasUfw) {
     return NextResponse.json({
       error: "ufw not installed. Install with: sudo apt install ufw",
@@ -78,8 +81,7 @@ export async function GET(req: NextRequest) {
     }, { status: 503 });
   }
 
-  // Get status verbose
-  const statusR = await runShell("ufw status verbose 2>&1", { timeout: 5_000 });
+  const statusR = await ctx.exec("ufw status verbose 2>&1", { timeout: 5_000 });
   if (statusR.exitCode !== 0) {
     return NextResponse.json(
       { error: statusR.stderr || "ufw status failed", exitCode: statusR.exitCode },
@@ -133,6 +135,8 @@ export async function POST(req: NextRequest) {
   const auth = checkAuth(req);
   if (!auth.ok || !auth.username) return unauthorized();
 
+  const ctx = await getServerContext(req);
+
   let body: any;
   try {
     body = await req.json();
@@ -181,7 +185,7 @@ export async function POST(req: NextRequest) {
     cmd = `sudo ufw ${action === "delete" ? "delete" : action} ${dirArg}${rule} 2>&1`;
   }
 
-  const r = await runShell(cmd, { timeout: 15_000 });
+  const r = await ctx.exec(cmd, { timeout: 15_000 });
 
   await recordAudit({
     username: auth.username,

@@ -6,6 +6,7 @@ import { useFailedServicesNotifications } from "@/lib/use-notifications";
 import { OfflineBanner } from "@/lib/use-online-status";
 import { useOfflineQueue } from "@/lib/offline-queue";
 import { CommandPalette } from "@/components/admin/command-palette";
+import { ServerSwitcher } from "@/components/admin/server-switcher";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +28,7 @@ import {
   Flame,
   CloudOff,
   Search,
+  Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +58,7 @@ const NAV_ITEMS: NavItem[] = [
 const MORE_ITEMS: NavItem[] = [
   { path: "/processes", label: "Processes", icon: Cpu },
   { path: "/ufw", label: "Firewall", icon: Flame },
+  { path: "/servers", label: "Servers", icon: Server },
   { path: "/audit", label: "Audit Log", icon: History },
   { path: "/sessions", label: "Sessions", icon: Shield },
   { path: "/bookmarks", label: "Bookmarks", icon: Star },
@@ -150,6 +153,9 @@ export function AppShell({ children, onLogout }: Props) {
           </a>
 
           <div className="flex items-center gap-1">
+            {/* Server switcher — multi-server support */}
+            <ServerSwitcher />
+
             {/* Search button — opens command palette */}
             <Button
               variant="ghost"

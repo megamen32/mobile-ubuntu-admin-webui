@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, unauthorized } from "@/lib/api-auth";
-import { runShell, hasSystemd } from "@/lib/server-exec";
+import { hasSystemd } from "@/lib/server-exec";
+import { getServerContext } from "@/lib/server-context";
 import { MOCK_UNITS } from "@/lib/mock-data";
 import { recordAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/rate-limiter";
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 /**
  * GET    /api/services/[name]      — get status
  * POST   /api/services/[name]      — control: { action: "start"|"stop"|"restart"|"reload"|"enable"|"disable" }
+ *
+ * Supports multi-server via X-Server-Id header.
  */
 export async function GET(
   req: NextRequest,
@@ -19,26 +22,28 @@ export async function GET(
   const auth = checkAuth(req);
   if (!auth.ok) return unauthorized();
 
+  const ctx = await getServerContext(req);
   const { name } = await params;
   const safeName = name.replace(/[^a-zA-Z0-9_.@-]/g, "");
   if (!safeName) {
     return NextResponse.json({ error: "Invalid unit name" }, { status: 400 });
   }
 
-  const onSystemd = await hasSystemd();
-  if (!onSystemd) {
-    const u = MOCK_UNITS.find(x => x.name === safeName);
-    if (!u) {
-      return NextResponse.json({ error: "Unit not found (mock)" }, { status: 404 });
+  if (ctx.mode === "local") {
+    const onSystemd = await hasSystemd();
+    if (!onSystemd) {
+      const u = MOCK_UNITS.find(x => x.name === safeName);
+      if (!u) {
+        return NextResponse.json({ error: "Unit not found (mock)" }, { status: 404 });
+      }
+      return NextResponse.json({ unit: u, mock: true, ts: Date.now() });
     }
-    return NextResponse.json({ unit: u, mock: true, ts: Date.now() });
   }
 
-  const r = await runShell(`systemctl status ${safeName} --no-pager --full 2>&1`, { timeout: 10_000 });
-  const enR = await runShell(`systemctl is-enabled ${safeName} 2>/dev/null`, { timeout: 3000 });
-  const loadR = await runShell(`systemctl show ${safeName} --property=LoadState,ActiveState,SubState,Description,MainPID,MemoryCurrent,CPUUsageNSec,FragmentPath --no-pager 2>/dev/null`, { timeout: 5000 });
+  const r = await ctx.exec(`systemctl status ${safeName} --no-pager --full 2>&1`, { timeout: 10_000 });
+  const enR = await ctx.exec(`systemctl is-enabled ${safeName} 2>/dev/null`, { timeout: 3000 });
+  const loadR = await ctx.exec(`systemctl show ${safeName} --property=LoadState,ActiveState,SubState,Description,MainPID,MemoryCurrent,CPUUsageNSec,FragmentPath --no-pager 2>/dev/null`, { timeout: 5000 });
 
-  // Parse systemctl show output
   const props: Record<string, string> = {};
   for (const line of loadR.stdout.split("\n")) {
     const eq = line.indexOf("=");
@@ -60,6 +65,7 @@ export async function GET(
     },
     statusText: r.stdout,
     mock: false,
+    server: ctx.serverName,
     ts: Date.now(),
   });
 }
@@ -69,8 +75,9 @@ export async function POST(
   { params }: { params: Promise<{ name: string }> }
 ) {
   const auth = checkAuth(req);
-  if (!auth.ok) return unauthorized();
+  if (!auth.ok || !auth.username) return unauthorized();
 
+  const ctx = await getServerContext(req);
   const { name } = await params;
   const safeName = name.replace(/[^a-zA-Z0-9_.@-]/g, "");
   if (!safeName) {
@@ -84,34 +91,39 @@ export async function POST(
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
 
-  const onSystemd = await hasSystemd();
   const ip = getClientIp(req);
 
-  if (!onSystemd) {
-    await recordAudit({
-      username: auth.username || "unknown",
-      action: `service.${action}`,
-      target: safeName,
-      ip,
-      meta: { mock: true },
-    });
-    return NextResponse.json({
-      ok: true,
-      mock: true,
-      message: `Mock: ${action} ${safeName}`,
-      ts: Date.now(),
-    });
+  // Mock mode only for local without systemd
+  if (ctx.mode === "local") {
+    const onSystemd = await hasSystemd();
+    if (!onSystemd) {
+      await recordAudit({
+        username: auth.username,
+        action: `service.${action}`,
+        target: safeName,
+        ip,
+        meta: { mock: true },
+      });
+      return NextResponse.json({
+        ok: true,
+        mock: true,
+        message: `Mock: ${action} ${safeName}`,
+        ts: Date.now(),
+      });
+    }
   }
 
-  const r = await runShell(`sudo systemctl ${action} ${safeName} 2>&1`, { timeout: 30_000 });
+  // Use sudo for systemctl control (works for both local and remote)
+  const r = await ctx.exec(`sudo systemctl ${action} ${safeName} 2>&1`, { timeout: 30_000 });
   if (r.exitCode !== 0) {
     await recordAudit({
-      username: auth.username || "unknown",
+      username: auth.username,
       action: `service.${action}`,
       target: safeName,
       ip,
       result: "error",
       error: r.stderr || r.stdout,
+      meta: ctx.serverId !== "local" ? { server: ctx.serverName } : undefined,
     });
     return NextResponse.json(
       { error: r.stderr || r.stdout || `Failed to ${action} ${safeName}`, exitCode: r.exitCode },
@@ -119,10 +131,11 @@ export async function POST(
     );
   }
   await recordAudit({
-    username: auth.username || "unknown",
+    username: auth.username,
     action: `service.${action}`,
     target: safeName,
     ip,
+    meta: ctx.serverId !== "local" ? { server: ctx.serverName } : undefined,
   });
   return NextResponse.json({ ok: true, mock: false, output: r.stdout, ts: Date.now() });
 }

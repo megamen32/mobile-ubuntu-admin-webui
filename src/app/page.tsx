@@ -19,6 +19,7 @@ import { BookmarksPage } from "@/components/admin/bookmarks-page";
 import { ProcessViewer } from "@/components/admin/processes/process-viewer";
 import { UfwManager } from "@/components/admin/ufw/ufw-manager";
 import { OfflineQueuePage } from "@/components/admin/offline-queue-page";
+import { ServersPage } from "@/components/admin/servers-page";
 
 export default function Home() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -131,6 +132,11 @@ function renderRoute(route: { path: string; segments: string[]; query: URLSearch
   // /queue
   if (segments[0] === "queue") {
     return <OfflineQueuePage />;
+  }
+
+  // /servers
+  if (segments[0] === "servers") {
+    return <ServersPage />;
   }
 
   // Default: overview
