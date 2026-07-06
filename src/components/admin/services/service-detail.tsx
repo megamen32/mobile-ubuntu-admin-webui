@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { apiFetch, apiPost, clearApiCache } from "@/lib/api-client";
+import { useLogStream } from "@/lib/use-log-stream";
 import { useHashRoute } from "@/lib/use-hash-route";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   Play,
@@ -23,6 +23,8 @@ import {
   FileText,
   ChevronDown,
   ChevronRight,
+  Radio,
+  Pause,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -52,12 +54,27 @@ export function ServiceDetail({ unitName }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
 
-  // Logs panel state
-  const [logs, setLogs] = useState<string[]>([]);
+  // Logs panel state — SSE streaming
   const [logsOpen, setLogsOpen] = useState(true);
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [logLines, setLogLines] = useState(200);
+  const [logLines, setLogLines] = useState(100);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const logStreamUrl = useMemo(
+    () => `/api/services/${encodeURIComponent(unitName)}/logs/stream?lines=${logLines}`,
+    [unitName, logLines]
+  );
+  const {
+    lines: streamLines,
+    status: streamStatus,
+    paused: streamPaused,
+    pause: pauseStream,
+    resume: resumeStream,
+    clear: clearStream,
+  } = useLogStream({
+    url: logsOpen ? logStreamUrl : null,
+    maxLines: 500,
+    autoConnect: true,
+  });
 
   const load = useCallback(async (force = false) => {
     if (force) setRefreshing(true); else setLoading(true);
@@ -76,25 +93,16 @@ export function ServiceDetail({ unitName }: Props) {
     }
   }, [unitName]);
 
-  const loadLogs = useCallback(async (force = false) => {
-    setLogsLoading(true);
-    try {
-      const data = await apiFetch<{ logs: string[] }>(
-        `/api/services/${encodeURIComponent(unitName)}/logs?lines=${logLines}`,
-        { cacheKey: `service-logs:${unitName}:${logLines}`, maxAge: force ? 0 : 15_000 }
-      );
-      setLogs(data.logs);
-    } catch (e: any) {
-      toast.error(`Logs failed: ${e?.message}`);
-    } finally {
-      setLogsLoading(false);
-    }
-  }, [unitName, logLines]);
-
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (logsOpen) loadLogs(); }, [loadLogs, logsOpen]);
 
-  // Background refresh
+  // Auto-scroll log panel on new lines
+  useEffect(() => {
+    if (logsOpen && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [streamLines, logsOpen]);
+
+  // Background refresh of service status
   useEffect(() => {
     const t = setInterval(() => load(), 15_000);
     return () => clearInterval(t);
@@ -108,7 +116,7 @@ export function ServiceDetail({ unitName }: Props) {
       clearApiCache("services-list");
       toast.success(`${action} ${unitName}: OK`);
       await load(true);
-      if (logsOpen) await loadLogs(true);
+      // SSE stream auto-resumes — no need to manually reload logs
     } catch (e: any) {
       toast.error(`${action} failed: ${e?.message}`);
     } finally {
@@ -253,7 +261,7 @@ export function ServiceDetail({ unitName }: Props) {
         </Card>
       )}
 
-      {/* Logs panel */}
+      {/* Logs panel — SSE live streaming */}
       <Card className="overflow-hidden">
         <button
           className="w-full flex items-center justify-between p-3 hover:bg-accent/50 transition-colors"
@@ -264,9 +272,15 @@ export function ServiceDetail({ unitName }: Props) {
             <Terminal className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold">journalctl</span>
             <Badge variant="outline" className="text-[10px]">
-              <Clock className="w-3 h-3 mr-1" />
-              last {logLines}
+              <Radio
+                className={cn("w-3 h-3 mr-1", streamStatus === "open" && "animate-pulse")}
+                style={{ color: streamStatus === "open" ? "#10b981" : streamStatus === "error" ? "#ef4444" : "#9ca3af" }}
+              />
+              {streamStatus === "open" ? "live" : streamStatus}
             </Badge>
+            {streamLines[0]?.mock && (
+              <Badge variant="outline" className="text-[10px] text-yellow-500">mock</Badge>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <select
@@ -275,31 +289,48 @@ export function ServiceDetail({ unitName }: Props) {
               onClick={(e) => e.stopPropagation()}
               className="text-xs bg-secondary border border-border rounded px-1.5 py-0.5"
             >
-              <option value={50}>50</option>
-              <option value={200}>200</option>
-              <option value={500}>500</option>
-              <option value={1000}>1000</option>
+              <option value={50}>50 init</option>
+              <option value={100}>100 init</option>
+              <option value={200}>200 init</option>
+              <option value={500}>500 init</option>
             </select>
             <Button
               variant="ghost"
               size="sm"
               className="h-7 w-7 p-0"
-              onClick={(e) => { e.stopPropagation(); loadLogs(true); }}
-              disabled={logsLoading}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (streamPaused) resumeStream(); else pauseStream();
+              }}
+              title={streamPaused ? "Resume" : "Pause"}
             >
-              <RefreshCw className={cn("w-3.5 h-3.5", logsLoading && "animate-spin")} />
+              {streamPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={(e) => { e.stopPropagation(); clearStream(); }}
+              title="Clear"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
             </Button>
           </div>
         </button>
         {logsOpen && (
           <div className="border-t border-border">
             <div className="max-h-96 overflow-y-auto scrollbar-thin p-2 font-mono text-[11px] leading-relaxed bg-black/30">
-              {logs.length === 0 ? (
-                <div className="text-muted-foreground text-center py-6">No logs</div>
+              {streamStatus === "connecting" && streamLines.length === 0 ? (
+                <div className="text-muted-foreground text-center py-6 flex items-center justify-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Connecting to stream...
+                </div>
+              ) : streamLines.length === 0 ? (
+                <div className="text-muted-foreground text-center py-6">Waiting for logs...</div>
               ) : (
-                logs.map((line, i) => (
+                streamLines.map((line, i) => (
                   <div key={i} className="whitespace-pre-wrap break-all hover:bg-white/5 px-1 py-0.5">
-                    {colorizeLog(line)}
+                    {colorizeLog(line.line)}
                   </div>
                 ))
               )}

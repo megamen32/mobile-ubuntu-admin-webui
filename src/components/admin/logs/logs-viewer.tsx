@@ -1,83 +1,76 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { apiFetch, clearApiCache } from "@/lib/api-client";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  RefreshCw,
   Loader2,
   Search,
-  ChevronDown,
   Download,
   Pause,
   Play,
+  Radio,
+  Zap,
+  WifiOff,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLogStream, type StreamStatus } from "@/lib/use-log-stream";
 
 interface Props {
   presetUnit?: string;
 }
 
 export function LogsViewer({ presetUnit }: Props) {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
-  const [lines, setLines] = useState(500);
   const [since, setSince] = useState("1h");
   const [priority, setPriority] = useState("all");
   const [unit, setUnit] = useState(presetUnit || "");
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [initialLines, setInitialLines] = useState(100);
   const [autoScroll, setAutoScroll] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async (force = false) => {
-    if (force) { setRefreshing(true); clearApiCache("general-logs"); } else { setLoading(true); }
-    try {
-      const params = new URLSearchParams();
-      params.set("lines", String(lines));
-      if (since) params.set("since", since);
-      if (priority !== "all") params.set("priority", priority);
-      if (unit) params.set("unit", unit);
-      const data = await apiFetch<{ logs: string[] }>(`/api/logs?${params.toString()}`, {
-        cacheKey: "general-logs",
-        maxAge: force ? 0 : 10_000,
-      });
-      setLogs(data.logs);
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [lines, since, priority, unit]);
+  // Build SSE URL based on filters
+  const streamUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("lines", String(initialLines));
+    if (since) params.set("since", since);
+    if (priority !== "all") params.set("priority", priority);
+    if (unit) params.set("unit", unit);
+    return `/api/logs/stream?${params.toString()}`;
+  }, [since, priority, unit, initialLines]);
 
-  useEffect(() => { load(); }, [load]);
+  const {
+    lines: streamLines,
+    status,
+    paused,
+    pause,
+    resume,
+    clear: clearStream,
+    disconnect,
+    connect,
+  } = useLogStream({
+    url: streamUrl,
+    maxLines: 1000,
+    autoConnect: true,
+  });
 
-  // Auto-refresh
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const t = setInterval(() => load(), 10_000);
-    return () => clearInterval(t);
-  }, [autoRefresh, load]);
-
-  // Auto-scroll
+  // Auto-scroll on new lines
   useEffect(() => {
     if (autoScroll && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [logs, autoScroll]);
+  }, [streamLines, autoScroll]);
 
   const filtered = useMemo(() => {
-    if (!search) return logs;
+    if (!search) return streamLines;
     const q = search.toLowerCase();
-    return logs.filter(l => l.toLowerCase().includes(q));
-  }, [logs, search]);
+    return streamLines.filter(l => l.line.toLowerCase().includes(q));
+  }, [streamLines, search]);
 
   function downloadLogs() {
-    const blob = new Blob([logs.join("\n")], { type: "text/plain" });
+    const blob = new Blob([streamLines.map(l => l.line).join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -86,37 +79,45 @@ export function LogsViewer({ presetUnit }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  const statusInfo = getStatusInfo(status);
+
   return (
     <div className="p-3 space-y-3 h-full flex flex-col">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Logs</h1>
+        <div>
+          <h1 className="text-xl font-bold">Logs</h1>
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Radio className={cn("w-3 h-3", statusInfo.pulse && "animate-pulse")} style={{ color: statusInfo.color }} />
+            {streamLines.length} lines · {statusInfo.label}
+          </p>
+        </div>
         <div className="flex gap-1">
           <Button
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => setAutoRefresh(a => !a)}
-            title={autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh"}
+            onClick={() => paused ? resume() : pause()}
+            title={paused ? "Resume stream" : "Pause stream"}
           >
-            {autoRefresh ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => downloadLogs()}
+            onClick={clearStream}
+            title="Clear"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={downloadLogs}
             title="Download"
           >
             <Download className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => load(true)}
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
           </Button>
         </div>
       </div>
@@ -161,14 +162,14 @@ export function LogsViewer({ presetUnit }: Props) {
             <option value="debug">Debug</option>
           </select>
           <select
-            value={lines}
-            onChange={(e) => setLines(Number(e.target.value))}
+            value={initialLines}
+            onChange={(e) => setInitialLines(Number(e.target.value))}
             className="h-9 bg-card border border-border rounded px-2 text-sm"
           >
-            <option value={100}>100</option>
-            <option value={500}>500</option>
-            <option value={1000}>1000</option>
-            <option value={2000}>2000</option>
+            <option value={50}>50 init</option>
+            <option value={100}>100 init</option>
+            <option value={200}>200 init</option>
+            <option value={500}>500 init</option>
           </select>
         </div>
         <div className="relative">
@@ -185,8 +186,10 @@ export function LogsViewer({ presetUnit }: Props) {
       {/* Log output */}
       <Card className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-secondary/30">
-          <span className="text-xs text-muted-foreground">
-            {filtered.length} {search ? `of ${logs.length}` : ""} lines
+          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Zap className="w-3 h-3" style={{ color: statusInfo.color }} />
+            {status === "open" ? "Live streaming" : status === "connecting" ? "Connecting..." : status === "error" ? "Reconnecting..." : status}
+            {streamLines[0]?.mock && <span className="text-yellow-500">· mock mode</span>}
           </span>
           <button
             onClick={() => setAutoScroll(a => !a)}
@@ -199,25 +202,44 @@ export function LogsViewer({ presetUnit }: Props) {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto scrollbar-thin p-2 font-mono text-[11px] leading-relaxed bg-black/40">
-          {loading ? (
+          {status === "connecting" && streamLines.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
               <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              Loading logs...
+              Connecting to log stream...
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-muted-foreground text-center py-12">No logs match filters</div>
+            <div className="text-muted-foreground text-center py-12">
+              {search ? "No logs match filter" : "Waiting for log output..."}
+            </div>
           ) : (
             filtered.map((line, i) => (
               <div key={i} className="whitespace-pre-wrap break-all hover:bg-white/5 px-1 py-0.5">
-                {colorizeLog(line)}
+                {colorizeLog(line.line)}
               </div>
             ))
           )}
           <div ref={logsEndRef} />
         </div>
       </Card>
+
+      {status === "error" && (
+        <div className="text-xs text-yellow-400 flex items-center gap-2 px-2">
+          <WifiOff className="w-3 h-3" />
+          Connection lost — auto-reconnecting...
+        </div>
+      )}
     </div>
   );
+}
+
+function getStatusInfo(status: StreamStatus): { label: string; color: string; pulse: boolean } {
+  switch (status) {
+    case "open": return { label: "Live", color: "#10b981", pulse: false };
+    case "connecting": return { label: "Connecting", color: "#f59e0b", pulse: true };
+    case "error": return { label: "Reconnecting", color: "#ef4444", pulse: true };
+    case "closed": return { label: "Disconnected", color: "#6b7280", pulse: false };
+    case "idle": return { label: "Idle", color: "#6b7280", pulse: false };
+  }
 }
 
 function colorizeLog(line: string): React.ReactNode {
