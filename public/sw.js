@@ -5,25 +5,30 @@
  *  - Display Web Push notifications (failed services alerts)
  *  - Cache app shell for offline use (stale-while-revalidate for navigation)
  *  - Handle notification clicks (focus existing tab or open new)
- *
- * This is intentionally lightweight — we don't try to cache API responses
- * because they're often live data (services, logs, terminal output).
+ *  - Network-first for API calls, cache-first for static assets
+ *  - Offline fallback page when navigation fails and no cache
  */
 
-const SW_VERSION = "v1";
+const SW_VERSION = "v2";
 const APP_SHELL_CACHE = `ub-admin-shell-${SW_VERSION}`;
+const RUNTIME_CACHE = `ub-admin-runtime-${SW_VERSION}`;
 
-// App shell — only the bare minimum for offline loading
+// App shell — only the bare minimum for offline loading.
+// Next.js standalone build serves these from /, /manifest.json, /logo.svg
 const APP_SHELL_URLS = [
   "/",
   "/manifest.json",
   "/logo.svg",
+  "/sw.js",
 ];
 
 // Install: pre-cache app shell
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(APP_SHELL_CACHE).then((cache) => cache.addAll(APP_SHELL_URLS))
+    caches.open(APP_SHELL_CACHE).then((cache) =>
+      // addAll fails if any URL fails — use individual puts instead
+      Promise.allSettled(APP_SHELL_URLS.map(url => cache.add(url)))
+    )
   );
   self.skipWaiting();
 });
@@ -34,7 +39,7 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((k) => k !== APP_SHELL_CACHE)
+          .filter((k) => k !== APP_SHELL_CACHE && k !== RUNTIME_CACHE)
           .map((k) => caches.delete(k))
       )
     )
@@ -42,26 +47,60 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: stale-while-revalidate for navigation, network-first for everything else
+// Fetch: route-aware strategy
 self.addEventListener("fetch", (event) => {
   const { request } = event;
+  const url = new URL(request.url);
 
   // Skip non-GET and chrome-extension requests
-  if (request.method !== "GET" || !request.url.startsWith("http")) return;
+  if (request.method !== "GET" || !url.protocol.startsWith("http")) return;
 
-  // Skip API requests — they need fresh data
-  if (request.url.includes("/api/")) return;
+  // Skip cross-origin requests (CDN, etc. — let browser handle them)
+  if (url.origin !== self.location.origin) return;
 
-  // Skip xterm CDN
-  if (request.url.includes("cdn.jsdelivr.net")) return;
+  // === API requests ===
+  // Network-first — always try to get fresh data. On failure, return cached
+  // if available, otherwise let the request fail (app handles it).
+  if (url.pathname.startsWith("/api/")) {
+    // Skip PTY output long-polling — it would hold the SW busy
+    if (url.pathname.startsWith("/api/pty/output")) return;
+    // Skip notifications polling
+    if (url.pathname.startsWith("/api/notifications/failed-services")) return;
 
-  // Navigation requests — try cache first, fall back to network
+    event.respondWith(
+      (async () => {
+        try {
+          const networkResp = await fetch(request);
+          // Cache successful GET responses (for offline read)
+          if (networkResp.ok && request.method === "GET") {
+            const respClone = networkResp.clone();
+            caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, respClone));
+          }
+          return networkResp;
+        } catch {
+          // Network failed — try cache
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          // Return a 503 with offline marker — app can detect this
+          return new Response(
+            JSON.stringify({ error: "offline", message: "Network unavailable" }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json", "X-Offline": "true" },
+            }
+          );
+        }
+      })()
+    );
+    return;
+  }
+
+  // === Navigation requests ===
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
         try {
           const networkResp = await fetch(request);
-          // Cache successful navigation responses
           if (networkResp.ok) {
             const cache = await caches.open(APP_SHELL_CACHE);
             cache.put(request, networkResp.clone());
@@ -73,14 +112,28 @@ self.addEventListener("fetch", (event) => {
           if (cached) return cached;
           const rootCached = await caches.match("/");
           if (rootCached) return rootCached;
-          return new Response("Offline", { status: 503, statusText: "Offline" });
+          // Last resort: synthetic offline page
+          return new Response(
+            `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Offline</title>
+<style>body{background:#1a0e1a;color:#e0d8d8;font-family:system-ui;padding:2rem;text-align:center}
+h1{color:#e95420}a{color:#3b73d4}</style></head>
+<body><h1>You're offline</h1>
+<p>The Ubuntu Admin panel can't reach the server.</p>
+<p>Once your connection is back, this page will reload automatically.</p>
+<p><a href="/">Try again</a></p>
+<script>setTimeout(() => location.reload(), 5000);</script>
+</body></html>`,
+            { status: 503, headers: { "Content-Type": "text/html" } }
+          );
         }
       })()
     );
     return;
   }
 
-  // Static assets — stale-while-revalidate
+  // === Static assets (JS, CSS, images) ===
+  // Stale-while-revalidate — return cache immediately, refresh in background
   event.respondWith(
     (async () => {
       const cached = await caches.match(request);
@@ -88,7 +141,7 @@ self.addEventListener("fetch", (event) => {
         .then((resp) => {
           if (resp && resp.ok) {
             const respClone = resp.clone();
-            caches.open(APP_SHELL_CACHE).then((cache) => cache.put(request, respClone));
+            caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, respClone));
           }
           return resp;
         })
@@ -131,19 +184,16 @@ self.addEventListener("notificationclick", (event) => {
         includeUncontrolled: true,
       });
 
-      // Focus existing tab if found
       for (const client of allClients) {
         if (client.url.includes(self.location.origin)) {
           if ("focus" in client) {
             await client.focus();
-            // Navigate to target URL via postMessage
             client.postMessage({ type: "navigate", url: targetUrl });
             return;
           }
         }
       }
 
-      // Open new tab
       if (self.clients.openWindow) {
         await self.clients.openWindow(targetUrl);
       }
@@ -151,9 +201,15 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-// Message from page — used to trigger navigation in focused tab
+// Message from page
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
+  }
+  if (event.data?.type === "PROCESS_QUEUE") {
+    // Tell all clients to process their offline queues
+    self.clients.matchAll({ includeUncontrolled: true }).then((clients) => {
+      clients.forEach((c) => c.postMessage({ type: "PROCESS_QUEUE" }));
+    });
   }
 });

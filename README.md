@@ -93,6 +93,32 @@
 - Dark Ubuntu theme (aubergine + orange #E95420)
 - PWA-ready (installable, standalone display mode)
 - All routes hash-addressable — deep links work in new tabs
+- **Command palette** — search icon in header + `Cmd+K` / `Ctrl+K` shortcut
+- **Offline mode** — service worker caches shell, actions queued and replayed when back online
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🖥️ Process Viewer
+- `ps aux`-style list with CPU%, MEM%, RSS, command
+- Sort by CPU / MEM / PID / name (click column headers)
+- Auto-refresh every 5s (pausable)
+- Filter by command, user, or PID
+- **Kill processes**: SIGTERM (graceful) or SIGKILL (force)
+- Mobile-optimized stacked layout
+
+</td>
+<td width="50%" valign="top">
+
+### 🔥 UFW Firewall Manager
+- View status (active/inactive, default policies, IPv6, logging)
+- Add rules: `allow` / `deny` / `limit` / `reject`
+- Per-rule direction: `in` / `out` / `both`
+- Delete rules, enable/disable firewall, reload
+- Syntax help: `22/tcp`, `443`, `from 10.0.0.0/8 to any port 22`
+- All actions audited
 
 </td>
 </tr>
@@ -180,6 +206,27 @@
 
 *See active sessions, revoke compromised devices*
 
+---
+
+### 🖥️ Process Viewer
+<img src="docs/screenshots/14-processes.png" alt="Processes" width="280"/>
+
+*`ps aux`-style list, sort by CPU/MEM, kill with SIGTERM/SIGKILL*
+
+---
+
+### 🔥 UFW Firewall Manager
+<img src="docs/screenshots/15-ufw.png" alt="UFW" width="280"/>
+
+*Status, rules, enable/disable, add/deny ports*
+
+---
+
+### 🔍 Command Palette
+<img src="docs/screenshots/16-command-palette.png" alt="Command Palette" width="280"/>
+
+*Search services, files, and actions — `Cmd+K` or tap search icon*
+
 </div>
 
 ---
@@ -232,17 +279,19 @@
 
 ## 🚀 Quick Start
 
+> **⚠️ Not Docker.** This app must run **on the host you want to admin** — it shells out to `systemctl`, `journalctl`, and spawns PTY bash sessions. Running it in a container would admin the container, not your host. See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
+
 ### Prerequisites
-- Ubuntu 20.04+ (or any systemd-based Linux)
-- Node.js 18+ and Bun (or npm/yarn/pnpm)
+- Ubuntu 20.04+ (or any systemd-based Linux) — installed on the host you want to manage
+- Bun (or Node.js 18+)
 - Root or sudoer account (for `systemctl` to actually control services)
 
 ### Install
 
 ```bash
-git clone https://github.com/megamen32/ubuntu-admin.git
-cd ubuntu-admin
-bun install        # or: npm install
+git clone https://github.com/megamen32/mobile-ubuntu-admin-webui.git
+cd mobile-ubuntu-admin-webui
+bun install
 ```
 
 ### Develop
@@ -257,10 +306,10 @@ Open http://localhost:3000, enter any username/password (preview mode accepts an
 
 ```bash
 bun run build
-bun run start
+bun run start      # or: use the systemd unit in scripts/ubuntu-admin.service
 ```
 
-For real auth, deploy behind a reverse proxy with PAM/sudo validation, then remove the fallback in `src/app/api/auth/login/route.ts`.
+For real auth, deploy behind a reverse proxy with PAM/sudo validation, then remove the fallback in `src/app/api/auth/login/route.ts`. Full guide in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 

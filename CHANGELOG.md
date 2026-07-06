@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-06
+
+### Added
+- **Process viewer** — `ps aux`-style list with sorting (CPU/MEM/PID/name), filtering, auto-refresh (5s), and kill (SIGTERM/SIGKILL)
+  - New API: `GET /api/processes`, `DELETE /api/processes/[pid]?signal=term|kill|hup`
+  - New UI: `/processes` route with ProcessViewer component
+  - Mobile-optimized stacked layout, desktop grid layout
+  - Color-coded high CPU (>50%) and high MEM (>30%) values
+  - Zombie process detection (yellow border)
+- **UFW firewall manager** — full firewall management
+  - View status (active/inactive, default policies, IPv6, logging)
+  - Add rules: `allow` / `deny` / `limit` / `reject` with direction (`in`/`out`/`both`)
+  - Delete rules, enable/disable firewall, reload
+  - Syntax help in UI: `22/tcp`, `443`, `from 10.0.0.0/8 to any port 22`
+  - All actions audited via `ufw.*` action type
+  - New API: `GET /api/ufw`, `POST /api/ufw`
+  - New UI: `/ufw` route with UfwManager component
+- **Command palette** — mobile-first search
+  - Search icon in header (always visible on mobile)
+  - `Cmd+K` / `Ctrl+K` shortcut on desktop
+  - Searches: navigation routes, bookmarks, systemd services
+  - Arrow keys to navigate, Enter to select, Escape to close
+  - New UI: CommandPalette component
+- **PWA offline mode** — work without connection
+  - Service Worker v2: network-first for API, stale-while-revalidate for static, cache navigation
+  - Synthetic offline fallback page with auto-reload
+  - Offline banner shown when network drops (auto-hides when back)
+  - Offline action queue: failed mutations stored in localStorage, auto-retried on reconnect
+  - New `/queue` page to view/clear/retry queue
+  - `useOnlineStatus` hook with periodic health check (30s)
+  - `useOfflineQueue` hook with auto-process on `online` event
+
+### Changed
+- Bottom navigation restructured: 5 primary tabs (Home, Services, Logs, Terminal, Files) + "More" dropdown for Processes, Firewall, Audit, Sessions, Bookmarks
+- Service Worker upgraded to v2 with better caching strategy and offline fallback page
+- Profile menu shows offline queue count when actions are queued
+- DEPLOYMENT.md rewritten — bare metal is now the only recommended path
+
+### Removed
+- **Docker support** — Dockerfile, docker-compose.yml, .dockerignore deleted
+  - Rationale: this app must run on the host it admins (it shells out to systemctl/journalctl/bash). Running in a container would admin the container, not the host — useless. See DEPLOYMENT.md for bare-metal instructions.
+- GitHub Actions CI workflow removed (was Docker-focused)
+
 ## [0.3.0] - 2026-07-06
 
 ### Added

@@ -16,6 +16,9 @@ import { FileEditor } from "@/components/admin/files/file-editor";
 import { SessionsList } from "@/components/admin/sessions/sessions-list";
 import { AuditLogViewer } from "@/components/admin/audit/audit-log-viewer";
 import { BookmarksPage } from "@/components/admin/bookmarks-page";
+import { ProcessViewer } from "@/components/admin/processes/process-viewer";
+import { UfwManager } from "@/components/admin/ufw/ufw-manager";
+import { OfflineQueuePage } from "@/components/admin/offline-queue-page";
 
 export default function Home() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -113,6 +116,21 @@ function renderRoute(route: { path: string; segments: string[]; query: URLSearch
   // /bookmarks
   if (segments[0] === "bookmarks") {
     return <BookmarksPage />;
+  }
+
+  // /processes
+  if (segments[0] === "processes") {
+    return <ProcessViewer />;
+  }
+
+  // /ufw
+  if (segments[0] === "ufw") {
+    return <UfwManager />;
+  }
+
+  // /queue
+  if (segments[0] === "queue") {
+    return <OfflineQueuePage />;
   }
 
   // Default: overview

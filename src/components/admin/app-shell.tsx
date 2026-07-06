@@ -3,6 +3,9 @@
 import { useHashRoute, buildHref } from "@/lib/use-hash-route";
 import { getAuth, clearAuth, msUntilExpiry, SESSION_TTL } from "@/lib/auth";
 import { useFailedServicesNotifications } from "@/lib/use-notifications";
+import { OfflineBanner } from "@/lib/use-online-status";
+import { useOfflineQueue } from "@/lib/offline-queue";
+import { CommandPalette } from "@/components/admin/command-palette";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -19,6 +22,11 @@ import {
   History,
   Star,
   AlertCircle,
+  MoreHorizontal,
+  Cpu,
+  Flame,
+  CloudOff,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,11 +46,19 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { path: "/", label: "Overview", icon: LayoutGrid },
+  { path: "/", label: "Home", icon: LayoutGrid },
   { path: "/services", label: "Services", icon: Boxes, matchPrefix: ["/service"] },
   { path: "/logs", label: "Logs", icon: ScrollText },
   { path: "/terminal", label: "Terminal", icon: TerminalSquare },
   { path: "/files", label: "Files", icon: FolderTree, matchPrefix: ["/files"] },
+];
+
+const MORE_ITEMS: NavItem[] = [
+  { path: "/processes", label: "Processes", icon: Cpu },
+  { path: "/ufw", label: "Firewall", icon: Flame },
+  { path: "/audit", label: "Audit Log", icon: History },
+  { path: "/sessions", label: "Sessions", icon: Shield },
+  { path: "/bookmarks", label: "Bookmarks", icon: Star },
 ];
 
 interface Props {
@@ -61,6 +77,20 @@ export function AppShell({ children, onLogout }: Props) {
     enable: enablePush,
     disable: disablePush,
   } = useFailedServicesNotifications();
+  const { actions: queuedActions } = useOfflineQueue();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Cmd+K / Ctrl+K shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(o => !o);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     const update = () => {
@@ -87,6 +117,8 @@ export function AppShell({ children, onLogout }: Props) {
     }
     return route.path.startsWith(item.path);
   };
+
+  const isMoreActive = MORE_ITEMS.some(item => isActive(item));
 
   // Hide bottom nav in terminal (terminal has its own input dock)
   const hideBottomNav = route.path.startsWith("/terminal");
@@ -117,14 +149,29 @@ export function AppShell({ children, onLogout }: Props) {
             </div>
           </a>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 px-2">
-                <div className="w-7 h-7 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs font-semibold uppercase">
-                  {auth?.username?.[0] || "?"}
-                </div>
-              </Button>
-            </DropdownMenuTrigger>
+          <div className="flex items-center gap-1">
+            {/* Search button — opens command palette */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2"
+              onClick={() => setPaletteOpen(true)}
+              title="Search (Cmd+K)"
+            >
+              <Search className="w-4 h-4" />
+              <kbd className="hidden sm:inline ml-1 text-[10px] text-muted-foreground font-mono px-1 py-0.5 rounded bg-secondary">
+                ⌘K
+              </kbd>
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 px-2">
+                  <div className="w-7 h-7 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs font-semibold uppercase">
+                    {auth?.username?.[0] || "?"}
+                  </div>
+                </Button>
+              </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
@@ -213,6 +260,15 @@ export function AppShell({ children, onLogout }: Props) {
                 <Star className="w-4 h-4 mr-2" />
                 Bookmarks
               </DropdownMenuItem>
+              {queuedActions.length > 0 && (
+                <DropdownMenuItem
+                  className="cursor-pointer text-yellow-400"
+                  onClick={() => navigate("/queue")}
+                >
+                  <CloudOff className="w-4 h-4 mr-2" />
+                  Offline queue ({queuedActions.length})
+                </DropdownMenuItem>
+              )}
 
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -226,9 +282,16 @@ export function AppShell({ children, onLogout }: Props) {
                 Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+            </DropdownMenu>
+          </div>
         </div>
       </header>
+
+      {/* Command palette overlay */}
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+
+      {/* Offline banner (auto-hides when online) */}
+      <OfflineBanner />
 
       {/* Main content — full bleed for max density */}
       <main className={cn(
@@ -254,7 +317,7 @@ export function AppShell({ children, onLogout }: Props) {
                     navigate(item.path);
                   }}
                   className={cn(
-                    "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors min-h-[56px]",
+                    "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors min-h-[56px] relative",
                     active
                       ? "text-primary"
                       : "text-muted-foreground hover:text-foreground"
@@ -270,6 +333,42 @@ export function AppShell({ children, onLogout }: Props) {
                 </a>
               );
             })}
+
+            {/* More menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={cn(
+                    "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors min-h-[56px] relative",
+                    isMoreActive
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <MoreHorizontal className="w-5 h-5" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">More</span>
+                  {isMoreActive && (
+                    <div className="absolute bottom-0 h-0.5 w-8 bg-primary rounded-full" />
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="mb-2 w-48">
+                {MORE_ITEMS.map(item => {
+                  const Icon = item.icon;
+                  const active = isActive(item);
+                  return (
+                    <DropdownMenuItem
+                      key={item.path}
+                      className={cn("cursor-pointer", active && "bg-accent")}
+                      onClick={() => navigate(item.path)}
+                    >
+                      <Icon className={cn("w-4 h-4 mr-2", active && "text-primary")} />
+                      <span className={cn(active && "text-primary font-medium")}>{item.label}</span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </nav>
       )}

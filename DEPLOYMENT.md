@@ -1,91 +1,42 @@
 # Deployment
 
-Three deployment options, from simplest to most production-ready.
+> **⚠️ No Docker.** This app must run **on the host you want to admin** — it shells out to `systemctl`, `journalctl`, and spawns PTY bash sessions. If you run it inside a container, it would admin the container, not your host — completely useless.
+>
+> If you really want isolation, run it in a VM or LXC container with `systemd` as init.
 
 ---
 
-## Option 1: Docker (recommended)
-
-### Quick start
+## Quick start (bare metal, recommended)
 
 ```bash
 # 1. Clone
-git clone https://github.com/megamen32/ubuntu-admin.git
-cd ubuntu-admin
+git clone https://github.com/megamen32/mobile-ubuntu-admin-webui.git
+cd mobile-ubuntu-admin-webui
 
-# 2. Configure
-cp .env.example .env
-# Edit .env to taste (ports, rate limits, audit toggle)
+# 2. Install Bun
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
 
-# 3. Build and run
-docker compose up -d --build
+# 3. Install deps + build
+bun install
+bun run build
 
-# 4. Open
+# 4. Run with env
+DATABASE_URL=file:./data/admin.db \
+NODE_ENV=production \
+bun run start
+
+# 5. Open
 open http://localhost:3000
 ```
 
 First login accepts any non-empty username/password (sandbox fallback). For real auth, see [Hardening](#hardening) below.
 
-### What you get
-
-- **Multi-stage Docker build** — final image ~250MB, non-root user
-- **SQLite persistence** via Docker volume (`admin-data`)
-- **Healthcheck** at `/api/health`
-- **Auto-restart** on crash (`restart: unless-stopped`)
-- **Host systemd access** via bind mounts (optional, see below)
-
-### Logs
-
-```bash
-docker compose logs -f ubuntu-admin
-```
-
-### Updating
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-### Backup
-
-```bash
-# SQLite DB lives in the volume — back it up with:
-docker run --rm -v ubuntu-admin_admin-data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/admin-$(date +%F).tar.gz /data
-```
-
 ---
 
-## Option 2: Bare metal with Bun
+## systemd service (auto-restart)
 
-For when you already have Node/Bun on the box and don't want Docker.
-
-```bash
-# 1. Clone
-git clone https://github.com/megamen32/ubuntu-admin.git
-cd ubuntu-admin
-
-# 2. Install Bun (if not present)
-curl -fsSL https://bun.sh/install | bash
-
-# 3. Install deps
-bun install
-
-# 4. Build
-bun run build
-
-# 5. Run with env
-DATABASE_URL=file:./data/admin.db \
-NODE_ENV=production \
-bun run start
-
-# 6. (Optional) systemd unit for auto-restart
-sudo cp scripts/ubuntu-admin.service /etc/systemd/system/
-sudo systemctl enable --now ubuntu-admin
-```
-
-Sample systemd unit (`scripts/ubuntu-admin.service`):
+Create `/etc/systemd/system/ubuntu-admin.service`:
 
 ```ini
 [Unit]
@@ -95,11 +46,12 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/ubuntu-admin
+WorkingDirectory=/opt/mobile-ubuntu-admin-webui
 Environment=NODE_ENV=production
-Environment=DATABASE_URL=file:/opt/ubuntu-admin/data/admin.db
+Environment=DATABASE_URL=file:/opt/mobile-ubuntu-admin-webui/data/admin.db
 Environment=SHELL=/bin/bash
-ExecStart=/usr/bin/node /opt/ubuntu-admin/.next/standalone/server.js
+Environment=AUDIT_LOG_ENABLED=true
+ExecStart=/usr/bin/node /opt/mobile-ubuntu-admin-webui/.next/standalone/server.js
 Restart=on-failure
 RestartSec=5
 
@@ -107,24 +59,39 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-### Reverse proxy (Caddy / Nginx)
+A ready-to-use copy is in `scripts/ubuntu-admin.service` — adjust `User` and `WorkingDirectory` to taste.
 
-The app listens on `:3000`. Put it behind a TLS-terminating proxy:
+```bash
+sudo cp scripts/ubuntu-admin.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ubuntu-admin
+sudo journalctl -u ubuntu-admin -f   # check it's running
+```
 
-**Caddy** (auto HTTPS):
+---
+
+## Reverse proxy (TLS)
+
+The app listens on `:3000`. **Always put it behind a TLS-terminating proxy** — Basic auth over HTTP is trivially sniffable.
+
+### Caddy (auto-HTTPS, easiest)
+
 ```caddy
 admin.example.com {
     reverse_proxy localhost:3000
 }
 ```
 
-**Nginx**:
+### Nginx
+
 ```nginx
 server {
     listen 443 ssl http2;
     server_name admin.example.com;
     ssl_certificate     /etc/letsencrypt/live/admin.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/admin.example.com/privkey.pem;
+
+    client_max_body_size 100M;  # for file uploads
 
     location / {
         proxy_pass http://localhost:3000;
@@ -133,21 +100,16 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Long-polling for PTY output — keep connections alive
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
     }
 }
 ```
 
 ---
 
-## Option 3: Vercel / serverless (NOT recommended)
-
-⚠️ **PTY terminal will not work** on serverless platforms (Vercel, Netlify, Cloudflare Workers) — they don't support long-lived processes or `node-pty`. Other features work but lose usefulness without a real systemd to manage.
-
-If you really want to try: deploy as usual, but expect PTY and real `systemctl` to be non-functional. Useful only as a demo.
-
----
-
-## Hardening
+## Hardening checklist
 
 Before exposing to the internet, **do all of these**:
 
@@ -161,7 +123,7 @@ The default `verifyCredentials()` in `src/lib/server-exec.ts` uses `su -c true <
 
 ### 3. TLS only
 
-Use Caddy (auto-HTTPS) or Nginx with Let's Encrypt. Never expose port 3000 directly to the internet — Basic auth over HTTP is trivially sniffable.
+Use Caddy (auto-HTTPS) or Nginx with Let's Encrypt. Never expose port 3000 directly to the internet.
 
 ### 4. Run as non-root with targeted sudo
 
@@ -177,13 +139,16 @@ ubuntu-admin ALL=(root) NOPASSWD: /usr/bin/systemctl enable *
 ubuntu-admin ALL=(root) NOPASSWD: /usr/bin/systemctl disable *
 ubuntu-admin ALL=(root) NOPASSWD: /usr/bin/systemctl status *
 ubuntu-admin ALL=(root) NOPASSWD: /usr/bin/journalctl *
+ubuntu-admin ALL=(root) NOPASSWD: /usr/bin/ufw *
+ubuntu-admin ALL=(root) NOPASSWD: /usr/bin/kill *
+ubuntu-admin ALL=(root) NOPASSWD: /usr/bin/pkill *
 ```
 
-Then update `src/lib/server-exec.ts` to prefix systemctl commands with `sudo`.
+Then update `src/lib/server-exec.ts` to prefix systemctl/ufw/kill commands with `sudo`.
 
 ### 5. Firewall + rate limiting
 
-- Use UFW to restrict access to known IPs:
+- Use UFW to restrict access to known IPs (the app now has a built-in UFW manager!):
   ```bash
   sudo ufw allow from 10.0.0.0/8 to any port 443 proto tcp
   sudo ufw deny 443
@@ -195,7 +160,7 @@ Then update `src/lib/server-exec.ts` to prefix systemctl commands with `sudo`.
 App-level audit log (who did what via the web UI) is enabled by default. View it via the UI (Profile menu → Audit log) or query SQLite directly:
 
 ```bash
-sqlite3 /app/data/admin.db "SELECT * FROM AuditLog ORDER BY ts DESC LIMIT 50;"
+sqlite3 ./data/admin.db "SELECT datetime(ts/1000, 'unixepoch'), username, action, target FROM AuditLog ORDER BY ts DESC LIMIT 50;"
 ```
 
 Disable by setting `AUDIT_LOG_ENABLED=false`.
@@ -206,38 +171,72 @@ Periodically force password changes. The 30-day rolling session expires on inact
 
 ---
 
-## Troubleshooting
+## Environment variables
 
-### `systemctl` fails inside Docker container
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `file:./db/custom.db` | SQLite path. Use absolute path in production. |
+| `SHELL` | `/bin/bash` | Shell used by PTY sessions |
+| `AUDIT_LOG_ENABLED` | `true` | Set to `false` to disable audit logging |
+| `RATE_LIMIT_LOGIN_PER_WINDOW` | `5` | Max login attempts per window per IP |
+| `RATE_LIMIT_WINDOW_MS` | `900000` (15 min) | Login rate-limit window size |
+| `VAPID_PUBLIC_KEY` | (auto-generated) | Web Push public key — set for production stability |
+| `VAPID_PRIVATE_KEY` | (auto-generated) | Web Push private key — set for production stability |
+| `VAPID_SUBJECT` | `mailto:admin@example.com` | Web Push subject (contact email) |
 
-The container needs to talk to the host's systemd. Make sure `docker-compose.yml` has:
-
-```yaml
-volumes:
-  - /var/log/journal:/var/log/journal:ro
-  - /run/systemd:/run/systemd:ro
-privileged: false
-cap_add:
-  - SYS_ADMIN
-  - SYS_PTRACE
-security_opt:
-  - seccomp:unconfined
-pid: host
+To generate stable VAPID keys for production:
+```bash
+bunx web-push generate-vapid-keys
 ```
 
-If it still doesn't work, your host may not have systemd running (e.g. WSL1, certain containers). In that case, the app falls back to mock mode — useful for demos only.
+---
 
-### `node-pty` install fails
+## Optional: install auto-format binaries
 
-The Docker image installs build tools (python3, make, g++) in the deps stage. If building manually on the host:
+The file editor auto-format falls back to a minimal built-in formatter when these are missing. Install for full support:
 
 ```bash
-# Ubuntu/Debian
-sudo apt install python3 make g++
-
-# macOS
-xcode-select --install
+sudo apt install prettier  # js/ts/json/html/css
+pip install black           # python
+sudo apt install golang     # gofmt
+cargo install taplo         # toml
 ```
+
+---
+
+## Updating
+
+```bash
+cd /opt/mobile-ubuntu-admin-webui
+git pull
+bun install
+bun run build
+sudo systemctl restart ubuntu-admin
+```
+
+---
+
+## Backup
+
+SQLite DB lives at the path you set in `DATABASE_URL`. Back it up:
+
+```bash
+# Stop the service first (or use sqlite3 .backup for hot copy)
+sudo systemctl stop ubuntu-admin
+tar czf /backup/ubuntu-admin-$(date +%F).tar.gz /opt/mobile-ubuntu-admin-webui/data
+sudo systemctl start ubuntu-admin
+```
+
+---
+
+## Troubleshooting
+
+### `systemctl` returns "System has not been booted with systemd"
+
+You're running inside a container or VM without systemd as PID 1. Either:
+- Run on the actual host (recommended)
+- Use a VM with systemd (most VPS images do)
+- The app falls back to mock mode in this case — useful only for demos
 
 ### PTY terminal can't connect
 
@@ -250,8 +249,28 @@ If connect works but no output appears, the PTY process may have died — click 
 
 ### File upload fails with 413
 
-Your reverse proxy may have a body size limit. For Caddy, no limit by default. For Nginx:
+Your reverse proxy may have a body size limit. For Nginx:
 
 ```nginx
 client_max_body_size 100M;
 ```
+
+### Login rate limit too strict / too lax
+
+Edit `.env` or set env vars:
+```
+RATE_LIMIT_LOGIN_PER_WINDOW=10   # allow 10 attempts
+RATE_LIMIT_WINDOW_MS=3600000     # per hour
+```
+
+### Audit log is filling up the DB
+
+Set up a cron job to purge old entries:
+
+```bash
+# /etc/cron.d/ubuntu-admin-purge
+0 3 * * * root sqlite3 /opt/mobile-ubuntu-admin-webui/data/admin.db \
+  "DELETE FROM AuditLog WHERE ts < unixepoch()*1000 - 90*86400*1000;"
+```
+
+Or disable audit logging entirely with `AUDIT_LOG_ENABLED=false`.
