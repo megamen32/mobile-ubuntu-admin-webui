@@ -1,35 +1,40 @@
 import * as pty from "node-pty";
 import type { IPty } from "node-pty";
+import { Client, ClientChannel } from "ssh2";
+import { getConnection, openShell, type SshServerConfig } from "@/lib/ssh-pool";
 
 /**
- * In-process PTY session manager for Next.js API routes.
+ * In-process PTY session manager — supports both local (node-pty) and remote (SSH shell).
  *
- * Why: Next.js rewrites can't reliably proxy WebSockets to a different port in
- * the preview sandbox (ECONNRESET / socket hang up). Instead we host the PTY
- * pool inside the Next.js process itself and expose it via HTTP routes that
- * the frontend polls. This keeps everything on port 3000 (the only externally
- * visible port) and avoids the proxy problem entirely.
+ * Each session has an abstract "transport" with a uniform interface:
+ *  - write(data): send keystrokes
+ *  - resize(cols, rows): resize terminal
+ *  - kill(): terminate
+ *  - onData(cb): receive output
+ *  - onExit(cb): process exited
  *
- * Sessions are keyed by sessionId. Each session has:
- *  - pty: the node-pty process
- *  - buffer: rolling output buffer (last 64KB) — consumed via long-polling
- *  - waiters: queue of long-poll HTTP responses waiting for new output
- *  - createdAt, lastActivity: for idle reaping
+ * Local transport uses node-pty.spawn().
+ * Remote transport uses ssh2 shell() channel.
  *
- * Lifecycle:
- *  - POST /api/pty/connect  → create session, return sessionId
- *  - POST /api/pty/input    → write keystrokes
- *  - GET  /api/pty/output   → long-poll for output (up to 25s)
- *  - POST /api/pty/resize   → resize terminal
- *  - POST /api/pty/kill     → kill session
+ * Sessions are keyed by sessionId. Buffer + waiters work the same for both.
  */
+
+interface PtyTransport {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+  onData(cb: (data: string) => void): void;
+  onExit(cb: (code: number | null, signal?: string) => void): void;
+}
 
 export interface PtySession {
   id: string;
-  pty: IPty;
   username: string;
-  buffer: string;          // rolling output buffer
-  waiters: Array<{         // long-poll waiters
+  mode: "local" | "remote";
+  serverName?: string;
+  transport: PtyTransport;
+  buffer: string;
+  waiters: Array<{
     resolve: (data: string) => void;
     timer: NodeJS.Timeout;
   }>;
@@ -38,13 +43,12 @@ export interface PtySession {
   createdAt: number;
 }
 
-const MAX_BUFFER = 64 * 1024; // 64KB rolling buffer
+const MAX_BUFFER = 64 * 1024;
 const POLL_TIMEOUT_MS = 25_000;
-const IDLE_REAP_MS = 30 * 60 * 1000; // 30 min
+const IDLE_REAP_MS = 30 * 60 * 1000;
 
 const sessions = new Map<string, PtySession>();
 
-// Idle reaper — kill sessions idle for > 30 min
 let reaperStarted = false;
 function startReaper() {
   if (reaperStarted) return;
@@ -53,23 +57,19 @@ function startReaper() {
     const now = Date.now();
     for (const [id, s] of sessions) {
       if (now - s.lastActivity > IDLE_REAP_MS) {
-        try { s.pty.kill(); } catch { /* ignore */ }
+        try { s.transport.kill(); } catch { /* ignore */ }
         sessions.delete(id);
       }
     }
   }, 60_000).unref();
 }
 
-export function createSession(
-  id: string,
+/** Create a local PTY session using node-pty */
+function createLocalTransport(
   username: string,
   cols: number,
   rows: number
-): PtySession {
-  // Reuse existing if same id
-  const existing = sessions.get(id);
-  if (existing) return existing;
-
+): PtyTransport {
   const shell = process.env.SHELL || "/bin/bash";
   const home = process.env.HOME || `/home/${username}`;
 
@@ -91,10 +91,86 @@ export function createSession(
     env,
   });
 
+  return {
+    write: (data) => ptyProc.write(data),
+    resize: (cols, rows) => {
+      try { ptyProc.resize(cols, rows); } catch { /* ignore */ }
+    },
+    kill: () => { try { ptyProc.kill(); } catch { /* ignore */ } },
+    onData: (cb) => ptyProc.onData(cb),
+    onExit: (cb) => ptyProc.onExit(({ exitCode }) => cb(exitCode)),
+  };
+}
+
+/** Create a remote PTY session using ssh2 shell channel */
+async function createRemoteTransport(
+  server: SshServerConfig,
+  cols: number,
+  rows: number
+): Promise<PtyTransport> {
+  const conn = await getConnection(server);
+  const stream = await openShell(conn, {
+    cols: cols || 80,
+    rows: rows || 24,
+  });
+
+  return {
+    write: (data) => {
+      try { stream.write(data); } catch { /* ignore */ }
+    },
+    resize: (cols, rows) => {
+      try {
+        // ssh2 uses setWindow on the channel
+        (stream as ClientChannel).setWindow(rows, cols, 480, 640);
+      } catch { /* ignore */ }
+    },
+    kill: () => {
+      try { stream.close(); } catch { /* ignore */ }
+      try { stream.destroy(); } catch { /* ignore */ }
+    },
+    onData: (cb) => {
+      stream.on("data", (chunk: Buffer) => cb(chunk.toString("utf8")));
+    },
+    onExit: (cb) => {
+      stream.on("close", (code: number, signal: any) => {
+        cb(code ?? 0, signal ? String(signal) : undefined);
+      });
+      stream.on("exit", (code: number, signal: any) => {
+        cb(code ?? 0, signal ? String(signal) : undefined);
+      });
+    },
+  };
+}
+
+/** Create a new session (local or remote) */
+export async function createSession(
+  id: string,
+  username: string,
+  cols: number,
+  rows: number,
+  server?: SshServerConfig
+): Promise<PtySession> {
+  const existing = sessions.get(id);
+  if (existing) return existing;
+
+  let transport: PtyTransport;
+  let mode: "local" | "remote" = "local";
+  let serverName: string | undefined;
+
+  if (server) {
+    mode = "remote";
+    serverName = server.name;
+    transport = await createRemoteTransport(server, cols, rows);
+  } else {
+    transport = createLocalTransport(username, cols, rows);
+  }
+
   const session: PtySession = {
     id,
-    pty: ptyProc,
     username,
+    mode,
+    serverName,
+    transport,
     buffer: "",
     waiters: [],
     exitCode: null,
@@ -103,14 +179,13 @@ export function createSession(
   };
   sessions.set(id, session);
 
-  ptyProc.onData((data) => {
+  // Wire up transport events
+  session.transport.onData((data) => {
     session.lastActivity = Date.now();
-    // Append to rolling buffer
     session.buffer += data;
     if (session.buffer.length > MAX_BUFFER) {
       session.buffer = session.buffer.slice(-MAX_BUFFER);
     }
-    // Wake up all waiters
     while (session.waiters.length > 0) {
       const w = session.waiters.shift()!;
       clearTimeout(w.timer);
@@ -118,18 +193,14 @@ export function createSession(
     }
   });
 
-  ptyProc.onExit(({ exitCode, signal }) => {
+  session.transport.onExit((exitCode) => {
     session.exitCode = exitCode ?? -1;
-    // Wake up all waiters with exit sentinel
     while (session.waiters.length > 0) {
       const w = session.waiters.shift()!;
       clearTimeout(w.timer);
-      w.resolve(""); // empty payload — exit code is checked separately
+      w.resolve("");
     }
-    // Auto-cleanup after 60s
-    setTimeout(() => {
-      sessions.delete(id);
-    }, 60_000).unref();
+    setTimeout(() => sessions.delete(id), 60_000).unref();
   });
 
   startReaper();
@@ -145,7 +216,7 @@ export function writeInput(id: string, data: string): boolean {
   if (!s) return false;
   s.lastActivity = Date.now();
   try {
-    s.pty.write(data);
+    s.transport.write(data);
     return true;
   } catch {
     return false;
@@ -156,10 +227,7 @@ export function resizeSession(id: string, cols: number, rows: number): boolean {
   const s = sessions.get(id);
   if (!s) return false;
   try {
-    s.pty.resize(
-      Math.max(1, Math.min(400, cols)),
-      Math.max(1, Math.min(200, rows))
-    );
+    s.transport.resize(cols, rows);
     return true;
   } catch {
     return false;
@@ -169,8 +237,7 @@ export function resizeSession(id: string, cols: number, rows: number): boolean {
 export function killSession(id: string): boolean {
   const s = sessions.get(id);
   if (!s) return false;
-  try { s.pty.kill(); } catch { /* ignore */ }
-  // Wake up waiters
+  try { s.transport.kill(); } catch { /* ignore */ }
   while (s.waiters.length > 0) {
     const w = s.waiters.shift()!;
     clearTimeout(w.timer);
@@ -180,12 +247,6 @@ export function killSession(id: string): boolean {
   return true;
 }
 
-/**
- * Long-poll for output. Returns a promise that resolves when:
- *  - new data arrives, OR
- *  - the session exits, OR
- *  - POLL_TIMEOUT_MS elapses (returns whatever is in the buffer)
- */
 export function pollOutput(id: string): Promise<{ data: string; exit: boolean; remaining: string }> {
   return new Promise((resolve) => {
     const s = sessions.get(id);
@@ -193,21 +254,17 @@ export function pollOutput(id: string): Promise<{ data: string; exit: boolean; r
       resolve({ data: "", exit: true, remaining: "" });
       return;
     }
-    // If buffer has content, return it immediately
     if (s.buffer.length > 0) {
       const data = s.buffer;
       s.buffer = "";
       resolve({ data, exit: s.exitCode !== null, remaining: "" });
       return;
     }
-    // If session exited, signal exit
     if (s.exitCode !== null) {
       resolve({ data: "", exit: true, remaining: "" });
       return;
     }
-    // Otherwise wait for new data
     const timer = setTimeout(() => {
-      // Timeout — pop ourselves from waiters
       const idx = s.waiters.findIndex(w => w.timer === timer);
       if (idx >= 0) s.waiters.splice(idx, 1);
       resolve({ data: "", exit: s.exitCode !== null, remaining: "" });
@@ -215,7 +272,6 @@ export function pollOutput(id: string): Promise<{ data: string; exit: boolean; r
 
     s.waiters.push({
       resolve: (data: string) => {
-        // Also drain any buffered data accumulated between waiter registration and now
         const buffered = s.buffer;
         s.buffer = "";
         resolve({ data: data + buffered, exit: s.exitCode !== null, remaining: "" });

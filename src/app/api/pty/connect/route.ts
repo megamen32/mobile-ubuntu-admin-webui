@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, unauthorized } from "@/lib/api-auth";
 import { createSession, makeSessionId, getSession } from "@/lib/pty-sessions";
+import { getSshConnection } from "@/lib/server-context";
 import { rateLimiter, rateLimitedResponse, getClientIp } from "@/lib/rate-limiter";
 import { recordAudit } from "@/lib/audit";
+import type { SshServerConfig } from "@/lib/ssh-pool";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Max 10 new PTY sessions per minute per IP (per user is harder to enforce
-// with Basic auth — IP-based is good enough for resource-exhaustion protection)
 const ptyLimiter = rateLimiter({
   windowMs: 60_000,
   max: 10,
@@ -19,15 +19,15 @@ const ptyLimiter = rateLimiter({
 /**
  * POST /api/pty/connect
  *   { cols, rows, sessionId? }
- * Returns { sessionId, shell }
+ * Returns { sessionId, shell, mode, serverName }
  *
  * Creates a new PTY session (or reuses existing if sessionId provided).
+ * Supports multi-server: if X-Server-Id header is set, opens SSH shell.
  */
 export async function POST(req: NextRequest) {
   const auth = checkAuth(req);
   if (!auth.ok || !auth.username) return unauthorized();
 
-  // Rate limit new session creation
   const ip = getClientIp(req);
   const rl = ptyLimiter.check(ip);
   if (!rl.ok) {
@@ -45,10 +45,24 @@ export async function POST(req: NextRequest) {
   const sessionId = body.sessionId || makeSessionId();
   const isNew = !getSession(sessionId);
 
-  // Reuse if exists
+  // Check if remote server is selected
+  const sshResult = await getSshConnection(req);
+  let server: SshServerConfig | undefined;
+  if (sshResult) {
+    server = sshResult.server;
+  }
+
+  // Create or reuse session
   let session = getSession(sessionId);
   if (!session) {
-    session = createSession(sessionId, auth.username, cols, rows);
+    try {
+      session = await createSession(sessionId, auth.username, cols, rows, server);
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: e?.message || "Failed to create PTY session" },
+        { status: 500 }
+      );
+    }
   }
 
   if (isNew) {
@@ -57,7 +71,11 @@ export async function POST(req: NextRequest) {
       action: "pty.connect",
       target: sessionId,
       ip,
-      meta: { cols, rows },
+      meta: {
+        cols, rows,
+        mode: session.mode,
+        server: session.serverName,
+      },
     });
   }
 
@@ -66,5 +84,7 @@ export async function POST(req: NextRequest) {
     shell: process.env.SHELL || "/bin/bash",
     cols,
     rows,
+    mode: session.mode,
+    serverName: session.serverName,
   });
 }

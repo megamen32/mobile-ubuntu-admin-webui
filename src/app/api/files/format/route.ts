@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, unauthorized } from "@/lib/api-auth";
 import { runShell, hasBin } from "@/lib/server-exec";
+import { getServerContext } from "@/lib/server-context";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  *   { path: string, content: string, lang: "js"|"ts"|"py"|"go"|"toml"|"html"|"css"|"json" }
  * Returns { content: string, formatter: string, mock: boolean }
  *
- * Auto-format using available system binaries:
+ * Auto-format using available system binaries (on local or remote server):
  *  - js/ts/json/html/css: prettier (if installed) or built-in minimal
  *  - py: black (if installed)
  *  - go: gofmt (if installed)
@@ -25,6 +26,10 @@ const MAX_INPUT = 1024 * 1024; // 1MB
 export async function POST(req: NextRequest) {
   const auth = checkAuth(req);
   if (!auth.ok) return unauthorized();
+
+  const ctx = await getServerContext(req);
+  // For remote, skip hasBin check (assume binaries are present)
+  const checkBin = async (bin: string) => ctx.mode === "local" ? hasBin(bin) : true;
 
   try {
     const body = await req.json();
@@ -42,14 +47,9 @@ export async function POST(req: NextRequest) {
     let mock = false;
 
     if (lang === "js" || lang === "ts" || lang === "json" || lang === "html" || lang === "css") {
-      if (await hasBin("prettier")) {
-        const r = await runShell(
-          `prettier --parser ${getPrettierParser(lang)} --stdin`,
-          { timeout: 10_000 }
-        );
-        // Write content to stdin via heredoc
+      if (await checkBin("prettier")) {
         const safe = content.replace(/'/g, "'\\''");
-        const r2 = await runShell(`printf '%s' '${safe}' | prettier --parser ${getPrettierParser(lang)} 2>/dev/null`, { timeout: 10_000 });
+        const r2 = await ctx.exec(`printf '%s' '${safe}' | prettier --parser ${getPrettierParser(lang)} 2>/dev/null`, { timeout: 10_000 });
         if (r2.exitCode === 0 && r2.stdout) {
           formatted = r2.stdout;
           formatter = "prettier";
@@ -58,9 +58,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (lang === "py" && !formatted) {
-      if (await hasBin("black")) {
+      if (await checkBin("black")) {
         const safe = content.replace(/'/g, "'\\''");
-        const r = await runShell(`printf '%s' '${safe}' | black -q - 2>/dev/null`, { timeout: 15_000 });
+        const r = await ctx.exec(`printf '%s' '${safe}' | black -q - 2>/dev/null`, { timeout: 15_000 });
         if (r.exitCode === 0 && r.stdout) {
           formatted = r.stdout;
           formatter = "black";
@@ -69,9 +69,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (lang === "go" && !formatted) {
-      if (await hasBin("gofmt")) {
+      if (await checkBin("gofmt")) {
         const safe = content.replace(/'/g, "'\\''");
-        const r = await runShell(`printf '%s' '${safe}' | gofmt 2>/dev/null`, { timeout: 10_000 });
+        const r = await ctx.exec(`printf '%s' '${safe}' | gofmt 2>/dev/null`, { timeout: 10_000 });
         if (r.exitCode === 0 && r.stdout) {
           formatted = r.stdout;
           formatter = "gofmt";
@@ -80,9 +80,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (lang === "toml" && !formatted) {
-      if (await hasBin("taplo")) {
+      if (await checkBin("taplo")) {
         const safe = content.replace(/'/g, "'\\''");
-        const r = await runShell(`printf '%s' '${safe}' | taplo format - 2>/dev/null`, { timeout: 10_000 });
+        const r = await ctx.exec(`printf '%s' '${safe}' | taplo format - 2>/dev/null`, { timeout: 10_000 });
         if (r.exitCode === 0 && r.stdout) {
           formatted = r.stdout;
           formatter = "taplo";

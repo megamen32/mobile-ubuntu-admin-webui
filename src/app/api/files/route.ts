@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, unauthorized } from "@/lib/api-auth";
-import fs from "fs/promises";
-import path from "path";
+import { getFsProvider } from "@/lib/fs-provider";
 import { MOCK_FILE_TREE, MOCK_FILE_CONTENTS } from "@/lib/mock-data";
 
 export const runtime = "nodejs";
@@ -9,20 +8,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/files?path=/etc/nginx
- *   Returns directory listing with stat info.
+ *   Returns directory listing or file content.
+ *   Supports multi-server via X-Server-Id (SFTP for remote).
+ *
  * POST /api/files
  *   { action: "mkdir"|"delete"|"rename", path, newPath? }
  */
-
-interface DirEntry {
-  name: string;
-  isDir: boolean;
-  size: number;
-  mtime: number;
-  mode: string;
-}
-
-const REAL_ROOT = "/"; // allow browsing whole fs (admin tool)
 
 export async function GET(req: NextRequest) {
   const auth = checkAuth(req);
@@ -31,47 +22,41 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   let target = sp.get("path") || "/";
   if (!target.startsWith("/")) target = "/" + target;
-  // Normalise
-  target = path.normalize(target);
+  // Normalize — simple version that works for both local and SFTP paths
+  target = target.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
 
-  // Mock mode: if real fs lacks the path, return mock data
   try {
-    const stat = await fs.stat(target);
-    if (stat.isDirectory()) {
-      const entries = await fs.readdir(target, { withFileTypes: true });
-      const out: DirEntry[] = [];
-      for (const e of entries) {
-        try {
-          const es = await fs.stat(path.join(target, e.name));
-          out.push({
-            name: e.name,
-            isDir: e.isDirectory(),
-            size: es.size,
-            mtime: es.mtimeMs,
-            mode: "0" + (es.mode & 0o777).toString(8),
-          });
-        } catch { /* skip */ }
+    const provider = await getFsProvider(req);
+
+    // Try real first (works for both local and SFTP)
+    try {
+      // For local: check if it's a file or dir by trying listDir first
+      // For SFTP: same approach
+      const entries = await provider.listDir(target);
+      return NextResponse.json({ path: target, entries, mock: false, ts: Date.now() });
+    } catch (listErr: any) {
+      // If listDir failed, maybe it's a file
+      try {
+        const { content, size, mtime } = await provider.readFile(target);
+        return NextResponse.json({
+          path: target,
+          content,
+          size,
+          mtime,
+          isFile: true,
+          mock: false,
+          ts: Date.now(),
+        });
+      } catch {
+        // Not a file either — rethrow for mock fallback (local only)
+        if (!provider.isLocal) throw listErr;
+        throw listErr;
       }
-      // Folders first, then alphabetical
-      out.sort((a, b) => (b.isDir ? 1 : 0) - (a.isDir ? 1 : 0) || a.name.localeCompare(b.name));
-      return NextResponse.json({ path: target, entries: out, mock: false, ts: Date.now() });
-    } else {
-      // It's a file — return its content
-      const content = await fs.readFile(target, "utf8");
-      return NextResponse.json({
-        path: target,
-        content,
-        size: stat.size,
-        mtime: stat.mtimeMs,
-        isFile: true,
-        mock: false,
-        ts: Date.now(),
-      });
     }
   } catch {
-    // Mock fallback
+    // Mock fallback (local mode only — when path doesn't exist)
     if (MOCK_FILE_TREE[target]) {
-      const entries: DirEntry[] = MOCK_FILE_TREE[target].map(name => {
+      const entries = MOCK_FILE_TREE[target].map(name => {
         const childPath = target === "/" ? "/" + name : target + "/" + name;
         const isDir = !name.includes(".") || !!MOCK_FILE_TREE[childPath];
         return {
@@ -82,7 +67,7 @@ export async function GET(req: NextRequest) {
           mode: isDir ? "0755" : "0644",
         };
       });
-      entries.sort((a, b) => (b.isDir ? 1 : 0) - (a.isDir ? 1 : 0) || a.name.localeCompare(b.name));
+      entries.sort((a: any, b: any) => (b.isDir ? 1 : 0) - (a.isDir ? 1 : 0) || a.name.localeCompare(b.name));
       return NextResponse.json({ path: target, entries, mock: true, ts: Date.now() });
     }
     if (MOCK_FILE_CONTENTS[target]) {
@@ -107,21 +92,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const action = String(body.action || "");
-    const target = path.normalize(String(body.path || "/"));
-    const newPath = body.newPath ? path.normalize(String(body.newPath)) : undefined;
+    const target = String(body.path || "/");
+    const newPath = body.newPath ? String(body.newPath) : undefined;
+
+    const provider = await getFsProvider(req);
 
     if (action === "mkdir") {
-      await fs.mkdir(target, { recursive: true });
+      await provider.mkdir(target);
       return NextResponse.json({ ok: true, ts: Date.now() });
     }
     if (action === "delete") {
-      const stat = await fs.stat(target);
-      if (stat.isDirectory()) await fs.rm(target, { recursive: true });
-      else await fs.unlink(target);
+      await provider.unlink(target);
       return NextResponse.json({ ok: true, ts: Date.now() });
     }
     if (action === "rename" && newPath) {
-      await fs.rename(target, newPath);
+      await provider.rename(target, newPath);
       return NextResponse.json({ ok: true, ts: Date.now() });
     }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
