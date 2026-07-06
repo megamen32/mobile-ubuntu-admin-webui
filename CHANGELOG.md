@@ -7,7 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-06
+
+### Multi-server support — complete
+
+This release adds full multi-server management via SSH. One UI instance can
+manage unlimited remote servers. No agent installation needed on targets —
+only SSH access required.
+
+#### What works on remote servers
+- **Services** — `systemctl list/start/stop/restart/enable/disable` via SSH exec
+- **Logs** — `journalctl -f` real-time SSE stream via SSH exec channel
+- **Terminal** — real bash PTY via SSH shell channel (TUI apps work: htop, vim, nano)
+- **Files** — SFTP browse/read/write/upload/download/mkdir/delete/rename
+- **File editor** — CodeMirror with syntax highlighting, auto-format via SSH exec
+- **Processes** — `ps aux` via SSH, kill by PID (SIGTERM/SIGKILL)
+- **Firewall** — `ufw status/allow/deny/limit/reject` via SSH
+- **System info** — hostname, uptime, memory, disk, distro via SSH
+
+#### Architecture
+- SSH proxy model: UI runs on one host, connects to remotes via `ssh2`
+- Persistent SSH connection pool (5-min idle reaper, auto-reconnect)
+- Two abstractions hide all complexity:
+  1. `getServerContext(req).exec(cmd)` — local `runShell` or SSH `execCommand`
+  2. `getFsProvider(req)` — local `fs/promises` or SFTP
+- API routes don't know or care if they're running locally or remotely
+
+#### Auth methods (both supported per server)
+- **SSH key** — key files in `~/.ssh/`, registry stores only filename
+- **Password** — stored in SQLite (use key auth in production)
+
+#### Server management
+- `/servers` page: add/edit/delete/test servers
+- Server switcher in header: switch between servers with one tap
+- Test connection button with latency display
+- Health status (green/red/gray) in switcher dropdown
+- SSH key dropdown auto-populated from `~/.ssh/`
+
+### Added
+- `src/lib/ssh-pool.ts` — SSH connection pool with exec/shell/test
+- `src/lib/ssh-keys.ts` — list SSH keys in `~/.ssh/`
+- `src/lib/server-context.ts` — server context abstraction (local vs SSH)
+- `src/lib/server-context-client.ts` — client-side server ID state
+- `src/lib/fs-provider.ts` — FsProvider interface (LocalFsProvider + SftpProvider)
+- `src/lib/pty-sessions/index.ts` — rewritten with PtyTransport abstraction
+- `src/app/api/servers/` — CRUD routes (list, create, update, delete, test)
+- `src/components/admin/server-switcher.tsx` — header dropdown
+- `src/components/admin/servers-page.tsx` — manage servers UI
+- Prisma `Server` model
+
+### Changed
+- All `/api/services/*` routes use `getServerContext(req).exec()`
+- All `/api/files/*` routes use `getFsProvider(req)`
+- `/api/pty/connect` opens SSH shell when `X-Server-Id` is set
+- `/api/logs/stream` (SSE) uses SSH exec channel for remote journalctl
+- `/api/processes`, `/api/ufw`, `/api/files/format` use `ctx.exec()`
+- `apiClient` sends `X-Server-Id` header on every request
+- `useLogStream` adds `?server=` query param for SSE auth
+- Bottom nav: added "Servers" to More menu
+
+### Security
+- **Removed `db/custom.db` from git tracking** — may have contained sensitive data
+  (audit logs, server credentials). Added `db/*.db` to `.gitignore`.
+  Anyone with an old clone: delete local `db/custom.db` and run `bun run db:push`.
+- SSH passwords stored plaintext in SQLite — use key auth in production
+- SSH connections pooled per server (no cross-server leakage)
+- All SSH operations audited via `server.*` action types
+
+### Verified on real server
+Tested against `vusa.bezrabotnyi.com` (Debian 13, root, password auth):
+- ✅ 140 systemd units listed
+- ✅ 206 processes listed
+- ✅ File system browsed via SFTP
+- ✅ `/etc/hostname` read via SFTP
+- ✅ UFW status: enabled, deny incoming, 0 rules
+- ✅ PTY terminal: real bash session, `hostname` command returned `vusa.bezrabotnyi.com`
+- ✅ System info: Debian 13 (trixie), 2 CPU, 4.2GB RAM
+
+## [0.5.0] - 2026-07-06
+
+### Added — Multi-server (Phase 1: services, logs, processes, UFW)
+- SSH proxy architecture via `ssh2`
+- `src/lib/ssh-pool.ts` — persistent SSH connection pool
+- `src/lib/server-context.ts` — `getServerContext(req)` abstraction
+- Prisma `Server` model (id, name, host, port, username, authMethod, keyName, etc.)
+- `/api/servers` CRUD routes + `/api/servers/[id]/test` connection test
+- `ServerSwitcher` component in header
+- `ServersPage` with add/edit/delete/test UI
+- SSH key dropdown (auto-populated from `~/.ssh/`)
+- Updated services/processes/ufw/logs routes to use `ctx.exec()`
+
+## [0.4.1] - 2026-07-06
+
+### Added — SSE real-time log streaming
+- `GET /api/logs/stream` — journalctl -f as SSE
+- `GET /api/services/[name]/logs/stream` — per-service SSE
+- `useLogStream` hook with auto-reconnect and backpressure
+- LogsViewer rewritten to use SSE (instant updates, no polling)
+- ServiceDetail journalctl panel uses SSE
+- Auth via query string for EventSource (can't send headers)
+
 ## [0.4.0] - 2026-07-06
+
+### Added
+- Process viewer (`ps aux` with sort/filter/kill)
+- UFW firewall manager (status, allow/deny/limit/reject, enable/disable)
+- Command palette (search icon + Cmd+K)
+- PWA offline mode (service worker v2, offline banner, action queue)
+- Bottom nav restructured: 5 primary + More dropdown
+
+### Removed
+- Docker support (app must run on host it admins)
+- GitHub Actions CI (was Docker-focused)
 
 ### Added
 - **Process viewer** — `ps aux`-style list with sorting (CPU/MEM/PID/name), filtering, auto-refresh (5s), and kill (SIGTERM/SIGKILL)
