@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-06
+
+### Added
+- **Docker support** — multi-stage Dockerfile, docker-compose.yml, .dockerignore
+  - Non-root user, healthcheck, host systemd access via bind mounts
+  - DEPLOYMENT.md with three deployment options (Docker / bare metal / Vercel warning)
+  - Sample systemd unit file at `scripts/ubuntu-admin.service`
+- **GitHub Actions CI** — `.github/workflows/ci.yml`
+  - Lint + type check + build on every PR
+  - Docker image build + smoke test (health check) on every push to main
+- **Health endpoint** — `GET /api/health` for Docker healthcheck and load balancers
+- **Web Push notifications** for failed services
+  - Service Worker (`public/sw.js`) handles push events + offline cache
+  - VAPID keys auto-generated, can be set via env vars for production stability
+  - `useFailedServicesNotifications` hook polls `/api/notifications/failed-services` every 60s
+  - Browser notifications + push to subscribed devices (multi-device support)
+  - Profile menu toggle to enable/disable
+  - Three new API routes: `/api/notifications/vapid`, `/subscribe`, `/failed-services`
+- **App-level audit log** — every UI action recorded to SQLite
+  - Tracks: service.start/stop/restart/enable/disable, file.save, terminal.exec, pty.connect, login.success/failed, session.revoke
+  - Filter by action prefix (e.g. "service."), search, paginated (50/page)
+  - Disable via `AUDIT_LOG_ENABLED=false` env var
+  - 90-day retention recommended (purge helper in `src/lib/audit.ts`)
+  - New Prisma model `AuditLog` with BigInt ts column
+  - New `/audit` route + AuditLogViewer component
+- **Rate limiting** — in-memory sliding window limiter
+  - `src/lib/rate-limiter.ts` with configurable window/max per IP
+  - Applied to `/api/auth/login` (5 attempts / 15 min) and `/api/pty/connect` (10/min)
+  - Returns proper 429 with Retry-After header
+  - Only resets on real auth success (not sandbox fallback)
+- **Device session management**
+  - New Prisma model `DeviceSession` (one row per user+device)
+  - Sessions auto-registered on first API call
+  - New `/api/sessions` and `/api/sessions/[id]` routes
+  - New `/sessions` route + SessionsList component
+  - Revoke any session from UI
+- **Bookmarks** — pin services and files
+  - Star icon on every service row (toggle)
+  - Pinned services shown as chips at top of services list
+  - Dedicated `/bookmarks` page for management
+  - `src/lib/bookmarks.ts` + `useBookmarks` hook with `useSyncExternalStore`
+  - Per-device localStorage (no server sync — fast)
+- **PWA improvements**
+  - Service Worker caches app shell for offline loading
+  - Web Push subscription per device
+  - Notification click handler focuses existing tab and navigates
+
+### Changed
+- `next.config.ts` — added `skipTrailingSlashRedirect: true` (fixes Socket.IO polling paths)
+- Prisma schema — added `PushSubscription`, `AuditLog`, `DeviceSession` models
+- Login API — now records audit entries (success + failure) and respects rate limit
+- Service control API — records audit entries for every systemctl action
+- PTY connect API — records audit entries + applies rate limit
+- Profile dropdown menu — added Push alerts toggle, quick links to Sessions/Audit/Bookmarks
+
+### Security
+- Rate limiting protects login brute-force (5/15min default, env-configurable)
+- Rate limiting protects PTY resource exhaustion (10/min per IP)
+- Audit log enables post-incident investigation
+- Device session list enables detection of unauthorized access
+
 ## [0.2.0] - 2026-07-05
 
 ### Added

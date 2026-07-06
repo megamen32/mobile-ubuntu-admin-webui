@@ -1,0 +1,31 @@
+[Unit]
+Description=Ubuntu Admin web panel
+Documentation=https://github.com/megamen32/ubuntu-admin
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/ubuntu-admin
+Environment=NODE_ENV=production
+Environment=DATABASE_URL=file:/opt/ubuntu-admin/data/admin.db
+Environment=SHELL=/bin/bash
+Environment=AUDIT_LOG_ENABLED=true
+Environment=RATE_LIMIT_LOGIN_PER_WINDOW=5
+Environment=RATE_LIMIT_WINDOW_MS=900000
+ExecStart=/usr/bin/node /opt/ubuntu-admin/.next/standalone/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ubuntu-admin
+
+# Hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

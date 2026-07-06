@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, unauthorized } from "@/lib/api-auth";
 import { runShell, hasSystemd } from "@/lib/server-exec";
 import { MOCK_UNITS } from "@/lib/mock-data";
+import { recordAudit } from "@/lib/audit";
+import { getClientIp } from "@/lib/rate-limiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +85,16 @@ export async function POST(
   }
 
   const onSystemd = await hasSystemd();
+  const ip = getClientIp(req);
+
   if (!onSystemd) {
+    await recordAudit({
+      username: auth.username || "unknown",
+      action: `service.${action}`,
+      target: safeName,
+      ip,
+      meta: { mock: true },
+    });
     return NextResponse.json({
       ok: true,
       mock: true,
@@ -94,10 +105,24 @@ export async function POST(
 
   const r = await runShell(`sudo systemctl ${action} ${safeName} 2>&1`, { timeout: 30_000 });
   if (r.exitCode !== 0) {
+    await recordAudit({
+      username: auth.username || "unknown",
+      action: `service.${action}`,
+      target: safeName,
+      ip,
+      result: "error",
+      error: r.stderr || r.stdout,
+    });
     return NextResponse.json(
       { error: r.stderr || r.stdout || `Failed to ${action} ${safeName}`, exitCode: r.exitCode },
       { status: 500 }
     );
   }
+  await recordAudit({
+    username: auth.username || "unknown",
+    action: `service.${action}`,
+    target: safeName,
+    ip,
+  });
   return NextResponse.json({ ok: true, mock: false, output: r.stdout, ts: Date.now() });
 }

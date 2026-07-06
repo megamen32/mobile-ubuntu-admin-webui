@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,6 +9,10 @@ datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
+
+// ============================================================================
+// Original scaffold models (kept for compatibility, unused by the admin app)
+// ============================================================================
 
 model User {
   id        String   @id @default(cuid())
@@ -29,4 +30,76 @@ model Post {
   authorId  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// Ubuntu Admin app models
+// ============================================================================
+
+/**
+ * Web Push subscription for failed-service notifications.
+ * One user can have multiple subscriptions (multiple devices/browsers).
+ */
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique // Web Push endpoint URL (per browser)
+  username  String   // The Ubuntu user this subscription belongs to
+  deviceId  String   @default("default") // Device label (user agent + timestamp)
+  p256dh    String   // ECDH public key (base64url)
+  auth      String   // Auth secret (base64url)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([username])
+}
+
+/**
+ * App-level audit log: who did what via the web UI.
+ *
+ * This is NOT a duplicate of system auditd/journald logs. auditd tracks kernel-
+ * level events (file access, syscall, PAM). This tracks UI-level actions
+ * (button clicks, terminal commands, file edits) performed through the panel.
+ *
+ * Disable via AUDIT_LOG_ENABLED=false env var.
+ *
+ * Retention: 90 days by default. Purge old entries via cron:
+ *   DELETE FROM AuditLog WHERE ts < unixepoch()*1000 - 90*86400*1000;
+ */
+model AuditLog {
+  id        String   @id @default(cuid())
+  ts        BigInt   // epoch ms — when the action occurred
+  username  String   // who performed the action
+  action    String   // category: "service.start" | "service.stop" | "file.save" | "terminal.exec" | "login" | "logout" | ...
+  target    String?  // what was acted upon (e.g. "nginx.service", "/etc/nginx/nginx.conf", command line)
+  ip        String?  // client IP from X-Forwarded-For
+  deviceId  String?  // browser session identifier
+  result    String   @default("ok") // "ok" | "error" | "denied"
+  error     String?  // error message if result == "error"
+  meta      String?  // JSON-encoded additional context
+
+  @@index([username])
+  @@index([action])
+  @@index([ts])
+}
+
+/**
+ * Known device sessions (for the Session Management UI).
+ *
+ * This is "best effort" — entries are created on first API call from a new
+ * device and never strictly expire (we use the same 30-day rolling window
+ * as the auth credentials). Users can manually revoke via UI.
+ */
+model DeviceSession {
+  id         String   @id @default(cuid())
+  username   String
+  deviceId   String   // browser-generated unique ID (stored in localStorage)
+  label      String?  // user-assigned label ("iPhone", "Work laptop")
+  userAgent  String?
+  ip         String?
+  firstSeen  DateTime @default(now())
+  lastSeen   DateTime @default(now())
+  revoked    Boolean  @default(false)
+
+  @@unique([username, deviceId])
+  @@index([username])
 }

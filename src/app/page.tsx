@@ -13,6 +13,9 @@ import { TerminalView } from "@/components/admin/terminal/terminal-view";
 import { TerminalWrapper } from "@/components/admin/terminal/terminal-wrapper";
 import { FileManager } from "@/components/admin/files/file-manager";
 import { FileEditor } from "@/components/admin/files/file-editor";
+import { SessionsList } from "@/components/admin/sessions/sessions-list";
+import { AuditLogViewer } from "@/components/admin/audit/audit-log-viewer";
+import { BookmarksPage } from "@/components/admin/bookmarks-page";
 
 export default function Home() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -95,6 +98,21 @@ function renderRoute(route: { path: string; segments: string[]; query: URLSearch
   // /files
   if (segments[0] === "files") {
     return <FileManager />;
+  }
+
+  // /sessions
+  if (segments[0] === "sessions") {
+    return <SessionsList />;
+  }
+
+  // /audit
+  if (segments[0] === "audit") {
+    return <AuditLogViewer />;
+  }
+
+  // /bookmarks
+  if (segments[0] === "bookmarks") {
+    return <BookmarksPage />;
   }
 
   // Default: overview

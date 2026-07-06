@@ -1,0 +1,54 @@
+services:
+  ubuntu-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ubuntu-admin:latest
+    container_name: ubuntu-admin
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    environment:
+      # Override DATABASE_URL to point at the mounted volume
+      - DATABASE_URL=file:/app/data/admin.db
+      - NODE_ENV=production
+      # Custom shell if you want something other than bash for PTY
+      - SHELL=/bin/bash
+      # Audit log toggle — set to "false" to disable app-level audit logging
+      - AUDIT_LOG_ENABLED=${AUDIT_LOG_ENABLED:-true}
+      # Rate limiting (login attempts per IP per window)
+      - RATE_LIMIT_LOGIN_PER_WINDOW=${RATE_LIMIT_LOGIN_PER_WINDOW:-5}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+    volumes:
+      # SQLite database persistence
+      - admin-data:/app/data
+      # Optional: mount host's systemd journal so journalctl works inside the container
+      # Comment out if you don't want container to see host logs
+      - /var/log/journal:/var/log/journal:ro
+      - /run/systemd:/run/systemd:ro
+    # Required for systemd access from inside the container.
+    # Without these, systemctl/journalctl inside the container can't talk to host's systemd.
+    # WARNING: this grants significant host access. Only use on trusted hosts.
+    privileged: false
+    cap_add:
+      - SYS_ADMIN
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    pid: host
+    networks:
+      - admin-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  admin-data:
+    driver: local
+
+networks:
+  admin-net:
+    driver: bridge

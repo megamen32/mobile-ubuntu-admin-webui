@@ -96,6 +96,28 @@
 
 </td>
 </tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🛡️ Audit Log & Security
+- **App-level audit log** — every UI action (service control, file edit, login) recorded
+- Filter by action type, search across entries, paginated (50/page)
+- Disable via `AUDIT_LOG_ENABLED=false` env var
+- **Rate limiting** on `/api/auth/login` (5 attempts / 15 min, configurable)
+- **Device session list** — see all active sessions, revoke any you don't recognize
+- Web Push notifications when services fail (subscribe via profile menu)
+
+</td>
+<td width="50%" valign="top">
+
+### ⭐ Bookmarks
+- **Pin services and files** — star icon on every service row
+- Pinned items shown at the top of services list (chips)
+- Dedicated `/bookmarks` page for management
+- Stored per-device in localStorage (no server sync — fast)
+
+</td>
+</tr>
 </table>
 
 ---
@@ -111,10 +133,10 @@
 
 ---
 
-### 📦 Services List
+### 📦 Services List with Bookmarks
 <img src="docs/screenshots/02-services.png" alt="Services" width="280"/>
 
-*27 units with type/status filters and search*
+*27 units with type/status filters, search, and bookmark chips*
 
 ---
 
@@ -143,6 +165,20 @@
 <img src="docs/screenshots/06-file-editor.png" alt="File Editor" width="280"/>
 
 *CodeMirror with syntax highlighting and auto-format*
+
+---
+
+### 📜 Audit Log
+<img src="docs/screenshots/10-audit-log.png" alt="Audit Log" width="280"/>
+
+*Every UI action tracked — who, what, when, from where*
+
+---
+
+### 🛡️ Device Sessions
+<img src="docs/screenshots/11-sessions.png" alt="Sessions" width="280"/>
+
+*See active sessions, revoke compromised devices*
 
 </div>
 

@@ -2,6 +2,7 @@
 
 import { useHashRoute, buildHref } from "@/lib/use-hash-route";
 import { getAuth, clearAuth, msUntilExpiry, SESSION_TTL } from "@/lib/auth";
+import { useFailedServicesNotifications } from "@/lib/use-notifications";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -12,6 +13,12 @@ import {
   FolderTree,
   LogOut,
   Power,
+  Bell,
+  BellOff,
+  Shield,
+  History,
+  Star,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +54,13 @@ export function AppShell({ children, onLogout }: Props) {
   const [route, navigate] = useHashRoute();
   const [auth, setAuthState] = useState(getAuth());
   const [expiryPct, setExpiryPct] = useState(100);
+  const {
+    permission,
+    failedCount,
+    enabled: pushEnabled,
+    enable: enablePush,
+    disable: disablePush,
+  } = useFailedServicesNotifications();
 
   useEffect(() => {
     const update = () => {
@@ -137,6 +151,69 @@ export function AppShell({ children, onLogout }: Props) {
                   />
                 </div>
               </div>
+              <DropdownMenuSeparator />
+
+              {/* Push notifications toggle */}
+              <div className="px-2 py-1.5">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2 text-xs font-medium">
+                    {pushEnabled ? (
+                      <Bell className="w-3.5 h-3.5 text-primary" />
+                    ) : (
+                      <BellOff className="w-3.5 h-3.5 text-muted-foreground" />
+                    )}
+                    Push alerts
+                  </div>
+                  <button
+                    onClick={() => pushEnabled ? disablePush() : enablePush()}
+                    className={cn(
+                      "px-2 py-0.5 rounded text-[10px] font-medium uppercase",
+                      pushEnabled
+                        ? "bg-destructive/15 text-destructive"
+                        : "bg-primary/15 text-primary"
+                    )}
+                  >
+                    {pushEnabled ? "Off" : "On"}
+                  </button>
+                </div>
+                {failedCount > 0 && (
+                  <div className="text-[10px] text-destructive flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {failedCount} failed service{failedCount === 1 ? "" : "s"}
+                  </div>
+                )}
+                {permission === "denied" && (
+                  <div className="text-[10px] text-muted-foreground">
+                    Permission denied — enable in browser settings
+                  </div>
+                )}
+              </div>
+
+              <DropdownMenuSeparator />
+
+              {/* Quick links */}
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => navigate("/sessions")}
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                Device sessions
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => navigate("/audit")}
+              >
+                <History className="w-4 h-4 mr-2" />
+                Audit log
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => navigate("/bookmarks")}
+              >
+                <Star className="w-4 h-4 mr-2" />
+                Bookmarks
+              </DropdownMenuItem>
+
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive cursor-pointer"

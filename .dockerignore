@@ -1,0 +1,35 @@
+# Docker ignore — keep image small and avoid leaking secrets
+**/node_modules
+**/.next
+**/.git
+**/.vscode
+**/.idea
+
+# Local envs (use docker-compose env_file or runtime env instead)
+.env
+.env.local
+.env*.local
+
+# Logs and caches
+*.log
+dev.log
+server.log
+npm-debug.log*
+
+# Sandbox / dev tooling
+.zscripts/
+.z-ai-config/
+.agent-ctx/
+.claude/
+worklog.md
+download/
+tool-results/
+docs/screenshots/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
+.next/cache

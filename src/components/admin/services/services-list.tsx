@@ -6,6 +6,8 @@ import { useHashRoute } from "@/lib/use-hash-route";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { BookmarksBar } from "@/components/admin/bookmarks-bar";
+import { useIsBookmarked, useToggleBookmark } from "@/lib/use-bookmarks";
 import {
   Search,
   RefreshCw,
@@ -16,6 +18,7 @@ import {
   CheckCircle2,
   Circle,
   Loader2,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -161,6 +164,15 @@ export function ServicesList({ filterType }: Props) {
         ))}
       </div>
 
+      {/* Bookmarks bar (only shows when bookmarks exist) */}
+      {!search && statusFilter === "all" && (
+        <BookmarksBar
+          type="service"
+          onOpen={(name) => navigate(`/service/${name}`)}
+          variant="chip"
+        />
+      )}
+
       {/* List */}
       {loading && units.length === 0 ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -189,6 +201,8 @@ export function ServicesList({ filterType }: Props) {
 function ServiceRow({ unit, onClick }: { unit: UnitInfo; onClick: () => void }) {
   const icon = getStateIcon(unit.activeState, unit.subState);
   const colorClass = getStateColor(unit.activeState);
+  const isBookmarked = useIsBookmarked("service", unit.name);
+  const toggle = useToggleBookmark();
 
   return (
     <Card
@@ -201,6 +215,21 @@ function ServiceRow({ unit, onClick }: { unit: UnitInfo; onClick: () => void }) 
           <div className="font-medium text-sm truncate">{unit.name}</div>
           <div className="text-xs text-muted-foreground truncate">{unit.description}</div>
         </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle("service", unit.name, unit.description);
+          }}
+          className={cn(
+            "shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors",
+            isBookmarked
+              ? "text-primary hover:bg-primary/15"
+              : "text-muted-foreground/40 hover:text-foreground hover:bg-secondary"
+          )}
+          title={isBookmarked ? "Remove bookmark" : "Add bookmark"}
+        >
+          <Star className={cn("w-3.5 h-3.5", isBookmarked && "fill-current")} />
+        </button>
         <div className="shrink-0 flex flex-col items-end gap-0.5">
           <span className={cn("text-[10px] font-mono uppercase px-1.5 py-0.5 rounded", colorClass, "bg-current/10")}>
             {unit.activeState}
